@@ -227,6 +227,16 @@ public class MapPresetTests
     }
 
     [Fact]
+    public void Every_area_has_a_decoy_that_isnt_one_of_its_real_examples()
+    {
+        Assert.All(MapPresets.All.Where(m => m.RadiusKm is not null), m =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(m.Decoy), m.Id);
+            Assert.DoesNotContain(m.Examples, e => e.Equals(m.Decoy, StringComparison.OrdinalIgnoreCase));
+        });
+    }
+
+    [Fact]
     public void Preset_ids_are_unique_and_examples_sit_inside_radius_sanity()
     {
         Assert.Equal(MapPresets.All.Count, MapPresets.All.Select(m => m.Id).Distinct().Count());

@@ -28,7 +28,9 @@ export function MapsScreen({ selectedId, onSelect, onClose }: Props) {
     return (maps ?? []).filter((m) => {
       if (country !== ALL && m.country !== country && m.radiusKm !== null) return false
       if (!q) return true
-      return [m.name, m.region, m.description, ...m.examples].some((s) => s.toLowerCase().includes(q))
+      return [m.name, m.region, m.description, ...m.examples, m.decoy ?? ''].some((s) =>
+        s.toLowerCase().includes(q),
+      )
     })
   }, [maps, query, country])
 

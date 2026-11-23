@@ -70,7 +70,10 @@ export interface MapPreset {
   zoom: number
   /** null = anywhere */
   radiusKm: number | null
+  /** Real places in the area. */
   examples: string[]
+  /** A made-up name the card slips in among the real ones. */
+  decoy: string | null
 }
 
 export interface CampaignResult {

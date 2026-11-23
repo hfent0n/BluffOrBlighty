@@ -492,9 +492,9 @@ button.link {
   --label: #3d4a42;
   position: relative;
   display: grid;
-  grid-template-columns: 38% 1fr;
+  grid-template-columns: 38% minmax(0, 1fr);
   align-items: center;
-  height: 150px;
+  min-height: 150px;
   padding: 10px 12px;
   background:
     repeating-linear-gradient(0deg, transparent 0 23px, rgb(0 0 0 / 0.035) 23px 24px),
@@ -538,16 +538,16 @@ button.link {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-left: 6px;
-  overflow: hidden;
+  padding: 4px 0 6px 6px;
+  min-width: 0;
 }
 
 .map-label {
   font-family: Georgia, 'Times New Roman', serif;
   color: var(--label);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.15;
+  /* Wrap rather than truncate: a cut-off "…" would give long fake names away. */
+  overflow-wrap: break-word;
   text-shadow:
     0 0 2px var(--paper),
     0 0 2px var(--paper);
@@ -592,7 +592,7 @@ button.link {
 }
 
 .selected-map .thumb {
-  height: 120px;
+  min-height: 120px;
 }
 
 .selected-map .thumb-outline {
@@ -894,4 +894,64 @@ button.link {
   .campaign-screen {
     padding-top: 16px;
   }
+}
+
+/*
+ * The decoy name sits under a magnifying glass: a round glass lens in a brass rim, with a
+ * collar and a wooden handle angled off to the bottom right. The name inside is set bigger,
+ * as if magnified.
+ */
+.map-label.decoy {
+  position: relative;
+  align-self: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 72px;
+  max-width: 114px;
+  aspect-ratio: 1;
+  margin: 6px 22px 16px 4px;
+  padding: 8px;
+  border-radius: 50%;
+  text-align: center;
+  /* A very long single word (Llanfairpwllgwyngyll) may still break inside the glass. */
+  overflow-wrap: anywhere;
+  /* Glass: a bright glint top-left, a faint blue tint, darker towards the rim. */
+  background:
+    radial-gradient(circle at 32% 28%, rgb(255 255 255 / 0.95) 0 6%, rgb(255 255 255 / 0) 26%),
+    radial-gradient(circle at 50% 50%, rgb(232 242 248 / 0.55) 55%, rgb(150 180 200 / 0.45) 100%);
+  /* Rim: inner bevel, brass band, dark outer edge, soft drop shadow. */
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.7),
+    inset -3px -4px 8px rgb(60 90 110 / 0.18),
+    0 0 0 4px #b08d4f,
+    0 0 0 5px #6b4f2a,
+    3px 5px 8px rgb(0 0 0 / 0.25);
+  font-size: 14px;
+  font-weight: 700;
+  font-style: normal;
+  font-variant: normal;
+  letter-spacing: normal;
+  line-height: 1.1;
+  color: #2b2620;
+  text-shadow: none;
+}
+
+/* Handle: a brass collar at the rim, then turned wood, angled off to the bottom right. */
+.map-label.decoy::after {
+  content: '';
+  position: absolute;
+  left: 86%;
+  top: 86%;
+  width: 34px;
+  height: 9px;
+  border-radius: 2px 5px 5px 2px;
+  background:
+    linear-gradient(90deg, #6b4f2a 0 2px, #c9a35f 2px 9px, #6b4f2a 9px 10px, transparent 10px),
+    linear-gradient(180deg, #7a4a24, #4a2c14 60%, #351f0e);
+  box-shadow: 1px 2px 3px rgb(0 0 0 / 0.3);
+  transform: rotate(45deg);
+  transform-origin: left center;
 }
