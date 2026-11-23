@@ -1,23 +1,24 @@
-import { useMemo } from 'react'
 import { useMapPresets } from '../maps/useMapPresets'
 import { MapThumb } from '../maps/MapThumb'
 import type { CampaignLevel } from '../types'
-import { isUnlocked, loadProgress, totalStars } from './progress'
+import { isUnlocked, totalStars, type CampaignProgress } from './progress'
 import { Stars } from './Stars'
 import { useCampaignLevels } from './useCampaignLevels'
 
 interface Props {
+  /** The account's progress when signed in, otherwise this browser's. */
+  progress: CampaignProgress
+  signedIn: boolean
+  accountsEnabled: boolean
   playerName: string
   onPlay: (level: CampaignLevel) => void
   onBack: () => void
 }
 
 /** The single-player ladder: one opponent per level, each unlocked by beating the last. */
-export function CampaignScreen({ playerName, onPlay, onBack }: Props) {
+export function CampaignScreen({ playerName, progress, signedIn, accountsEnabled, onPlay, onBack }: Props) {
   const { levels, error } = useCampaignLevels()
   const { maps } = useMapPresets()
-  // Read fresh each time the screen opens, so results from the match just played show up.
-  const progress = useMemo(() => loadProgress(), [])
   const earned = totalStars(progress)
   const possible = (levels?.length ?? 0) * 3
 
@@ -29,6 +30,13 @@ export function CampaignScreen({ playerName, onPlay, onBack }: Props) {
           <p className="muted">
             Beat each local expert to unlock the next. Win by 2 or more, or spot every fake, for extra stars.
           </p>
+          {accountsEnabled && (
+            <p className="muted small saved-where">
+              {signedIn
+                ? 'Progress is saved to your account.'
+                : 'Progress is saved on this device. Sign in on the home screen to keep it on any device.'}
+            </p>
+          )}
         </div>
         <div className="campaign-header-side">
           {levels && (

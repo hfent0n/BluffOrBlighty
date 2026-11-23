@@ -1,22 +1,32 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BOT_LEVELS, type BotLevel } from '../types'
+import { AccountBar } from '../account/AccountBar'
+import type { AccountApi } from '../account/useAccount'
 import type { GameApi } from '../useGame'
 
 interface Props {
   api: GameApi
+  account: AccountApi
   name: string
   onNameChange: (name: string) => void
   onCampaign: () => void
 }
 
-export function HomeScreen({ api, name, onNameChange, onCampaign }: Props) {
+export function HomeScreen({ api, account, name, onNameChange, onCampaign }: Props) {
   const [code, setCode] = useState('')
   const [level, setLevel] = useState<BotLevel>('Normal')
+
+  // Signed in with no name typed yet: use the account's name.
+  const accountName = account.me?.displayName
+  useEffect(() => {
+    if (accountName && !name.trim()) onNameChange(accountName)
+  }, [accountName, name, onNameChange])
   const canGo = name.trim().length > 0 && api.connected
 
   return (
     <div className="card home">
       <h1>Bluff or Blighty</h1>
+      <AccountBar account={account} onSignedInOrOut={() => void api.restart()} />
       <p className="lede">
         Find real silly place names on the map, slip in a fake one, and see who your friends can spot.
       </p>
