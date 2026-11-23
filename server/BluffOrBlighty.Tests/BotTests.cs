@@ -28,7 +28,7 @@ public class BotTests
         for (var seed = 0; seed < 25; seed++)
         {
             var rng = new Random(seed);
-            var s = BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, GameSession.MaxSpreadKm, rng);
+            var s = BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, rng);
             Assert.NotNull(s);
 
             var game = new GameSession("TEST", new Random(seed), TimeProvider.System);
@@ -44,9 +44,23 @@ public class BotTests
     }
 
     [Fact]
+    public void Bot_keeps_within_a_tight_host_limit()
+    {
+        for (var seed = 0; seed < 25; seed++)
+        {
+            var s = BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, new Random(seed), maxSpreadKm: 3);
+            if (s is null) continue; // not every seed finds 3 places that close; that's fine
+            var picks = s.Real.Append(s.Renamed).ToArray();
+            for (var i = 0; i < 3; i++)
+            for (var j = i + 1; j < 3; j++)
+                Assert.True(Geo.DistanceKm(picks[i], picks[j]) <= 3);
+        }
+    }
+
+    [Fact]
     public void Bot_returns_null_when_area_has_too_few_places()
     {
-        Assert.Null(BotBrain.ChooseSubmission(Norfolk.Take(2).ToArray(), NorthNorfolk, 15, new Random(1)));
+        Assert.Null(BotBrain.ChooseSubmission(Norfolk.Take(2).ToArray(), NorthNorfolk, new Random(1)));
     }
 
     [Fact]
@@ -110,8 +124,8 @@ public class BotTests
         game.Start(host.PlayerId);
         Assert.IsType<BotSubmitWork>(Assert.Single(game.PendingBotWork()));
 
-        game.Submit(host.PlayerId, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, 15, new Random(1))!);
-        game.Submit(bot, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, 15, new Random(2))!);
+        game.Submit(host.PlayerId, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, new Random(1))!);
+        game.Submit(bot, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, new Random(2))!);
         Assert.Equal(GamePhase.Guessing, game.Phase);
 
         // Round 1 is Alice's: the bot should vote.
@@ -134,7 +148,7 @@ public class BotTests
             new BotTiming { MinThink = TimeSpan.Zero, MaxThink = TimeSpan.Zero }, NullLogger<BotDriver>.Instance);
 
         await Task.WhenAll(driver.Kick(game)); // bot submits
-        game.Submit(host.PlayerId, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, 15, new Random(7))!);
+        game.Submit(host.PlayerId, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, new Random(7))!);
         Assert.Equal(GamePhase.Guessing, game.Phase);
 
         await Task.WhenAll(driver.Kick(game)); // bot votes on Alice's round

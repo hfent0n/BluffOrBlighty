@@ -20,7 +20,8 @@ public static class BotBrain
 
     /// <summary>Picks 3 nearby real places and renames one. Returns null if this area has too few places.</summary>
     public static SubmissionRequest? ChooseSubmission(
-        IReadOnlyList<TilePlace> places, MapPreset map, double maxSpreadKm, Random rng,
+        IReadOnlyList<TilePlace> places, MapPreset map, Random rng,
+        double? maxSpreadKm = null,
         FakeStyle style = FakeStyle.Local)
     {
         var candidates = places
@@ -30,8 +31,9 @@ public static class BotBrain
             .OrderBy(_ => rng.Next())
             .ToList();
 
-        // Keep groups tighter than the rule allows, so they fit comfortably on one screen.
-        var spread = Math.Min(maxSpreadKm, 8);
+        // The bot keeps its three within a few km of each other so its round fits on one
+        // screen, or tighter if the host has set a smaller limit.
+        var spread = Math.Min(maxSpreadKm ?? 8, 8);
         static bool Ok(TilePlace a, TilePlace b, double max)
         {
             var d = Geo.DistanceKm(a.Lat, a.Lng, b.Lat, b.Lng);

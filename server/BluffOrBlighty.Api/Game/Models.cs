@@ -108,7 +108,7 @@ public abstract record BotWork(string BotId, BotProfile Profile, int Leg)
     public abstract string Key { get; }
 }
 
-public sealed record BotSubmitWork(string BotId, BotProfile Profile, int Leg, MapPreset Map, double MaxSpreadKm)
+public sealed record BotSubmitWork(string BotId, BotProfile Profile, int Leg, MapPreset Map, double? MaxSpreadKm)
     : BotWork(BotId, Profile, Leg)
 {
     public override string Key => $"{BotId}:submit:{Leg}";
@@ -150,8 +150,9 @@ public sealed record GameView(
     GamePhase Phase,
     string MeId,
     string HostId,
-    double MaxSpreadKm,
     MapPreset Map,
+    // Max distance between a player's 3 picks; null = no limit.
+    double? MaxSpreadKm,
     PlayerView[] Players,
     RoundView? Round,
     // 1-based. A leg is one round for each player; most games are a single leg.

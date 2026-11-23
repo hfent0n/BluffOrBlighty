@@ -113,8 +113,9 @@ export interface GameView {
   phase: GamePhase
   meId: string
   hostId: string
-  maxSpreadKm: number
   map: MapPreset
+  /** Max distance between a player's 3 picks; null = no limit. */
+  maxSpreadKm: number | null
   players: PlayerView[]
   round: RoundView | null
   /** 1-based. A leg is one round for each player. */

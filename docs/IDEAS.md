@@ -11,7 +11,7 @@ Ideas for later. Sections marked **Built** are done; the rest is not built yet.
 Let the host pick a starting area from a list, so a game doesn't begin with everyone scrolling around the whole country.
 
 - Each preset is a name, a centre point, a zoom level and a radius, e.g. "North Norfolk", "The Cotswolds", "Yorkshire Dales", "Cornish coast", "Welsh Marches".
-- Players can only pick places inside the preset's area. The map is limited with MapLibre `maxBounds`, and the server checks every pick against the area as well as against the current spread limit (`GameSession.MaxSpreadKm`).
+- Players can only pick places inside the preset's area. The map is limited with MapLibre `maxBounds`, and the server checks every pick against the area. How far apart the 3 picks may be is a host setting: a slider in the lobby, 1–50 km or no limit.
 - Presets can start as a JSON file in the API. Later they can move to Postgres so people can save and share their own.
 
 ## Custom mode

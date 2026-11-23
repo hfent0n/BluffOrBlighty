@@ -10,8 +10,13 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
 {
     public const int MaxPlayers = 12;
     public const int MaxNameLength = 60;
-    public const double MaxSpreadKm = 15;
     private const double MinSeparationKm = 0.05;
+
+    /// <summary>Default for how far apart a player's 3 places may be. The host can change it or turn it off.</summary>
+    public const double DefaultMaxSpreadKm = 15;
+
+    public const double MinSpreadSettingKm = 1;
+    public const double MaxSpreadSettingKm = 50;
 
     private readonly object _lock = new();
     private readonly List<Player> _players = [];
@@ -20,6 +25,9 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     private int _roundIndex;
     private string _hostId = "";
     private MapPreset _map = MapPresets.Anywhere;
+
+    /// <summary>Max distance between a player's 3 picks. Null means no limit.</summary>
+    private double? _maxSpreadKm = DefaultMaxSpreadKm;
     private int _leg = 1;
     private int _legs = 1;
     private CampaignLevel? _campaign;
@@ -181,7 +189,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 var profile = bot.BotProfile ?? BotProfile.For(BotLevel.Normal);
                 if (Phase == GamePhase.Submitting && !_submissions.ContainsKey(bot.Id))
                 {
-                    work.Add(new BotSubmitWork(bot.Id, profile, _leg, _map, MaxSpreadKm));
+                    work.Add(new BotSubmitWork(bot.Id, profile, _leg, _map, _maxSpreadKm));
                 }
                 else if (CurrentRound() is { Revealed: false } round && round.AuthorId != bot.Id &&
                          !round.Votes.ContainsKey(bot.Id))
@@ -192,6 +200,20 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             }
 
             return work;
+        }
+    }
+
+    /// <summary>Host sets how far apart each player's 3 places may be (null = no limit).</summary>
+    public void SetMaxSpread(string playerId, double? km)
+    {
+        lock (_lock)
+        {
+            Touch();
+            RequireHost(playerId);
+            if (Phase != GamePhase.Lobby) throw new GameException("You can only change this in the lobby.");
+            if (km is { } v && (!double.IsFinite(v) || v < MinSpreadSettingKm || v > MaxSpreadSettingKm))
+                throw new GameException($"Pick a distance between {MinSpreadSettingKm:0} and {MaxSpreadSettingKm:0} km, or no limit.");
+            _maxSpreadKm = km is { } k ? Math.Round(k, 1) : null;
         }
     }
 
@@ -348,8 +370,8 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         {
             var d = Geo.DistanceKm(picks[i], picks[j]);
             if (d < MinSeparationKm) throw new GameException("Pick 3 different places.");
-            if (d > MaxSpreadKm)
-                throw new GameException($"Keep all 3 places within {MaxSpreadKm:0} km of each other.");
+            if (_maxSpreadKm is { } max && d > max)
+                throw new GameException($"Keep all 3 places within {max:0.#} km of each other.");
         }
 
         var fake = CleanName(request.FakeName, "Fake name");
@@ -450,7 +472,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             p.IsBot,
             p.BotLevel)).ToArray();
 
-        return new GameView(Code, Phase, meId, _hostId, MaxSpreadKm, _map, players, roundView, _leg, _legs,
+        return new GameView(Code, Phase, meId, _hostId, _map, _maxSpreadKm, players, roundView, _leg, _legs,
             BuildCampaignView(meId));
     }
 

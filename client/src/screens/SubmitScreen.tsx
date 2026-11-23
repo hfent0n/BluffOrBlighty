@@ -17,7 +17,7 @@ export function SubmitScreen({ game, api, onQuit }: { game: GameView; api: GameA
 
   const me = game.players.find((p) => p.id === game.meId)
   const spread = maxSpreadKm(picks)
-  const tooSpread = spread > game.maxSpreadKm
+  const tooSpread = game.maxSpreadKm !== null && spread > game.maxSpreadKm
   const dupe = picks.some((p, i) => picks.findIndex((q) => q.lat === p.lat && q.lng === p.lng) !== i)
 
   const problem =
@@ -82,7 +82,9 @@ export function SubmitScreen({ game, api, onQuit }: { game: GameView; api: GameA
               {game.map.radiusKm !== null && ' (stay inside the dashed circle)'}
             </span>
             <p className="muted">
-              Zoom in and click <strong>3 real place names</strong> close together. Then choose one to{' '}
+              Zoom in and click <strong>3 real place names</strong>
+              {game.maxSpreadKm === null ? ' anywhere on the map' : ` within ${game.maxSpreadKm} km of each other`}. Then
+              choose one to{' '}
               <strong>rename</strong> with your fake. In the guessing round, your fake will appear in its place.
             </p>
 

@@ -955,3 +955,33 @@ button.link {
   transform: rotate(45deg);
   transform-origin: left center;
 }
+
+/* ---- lobby distance slider ---- */
+
+.spread-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.spread-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.spread-setting input[type='range'] {
+  width: 100%;
+  padding: 0;
+  border: none;
+  accent-color: var(--accent);
+}
+
+.spread-scale {
+  display: flex;
+  justify-content: space-between;
+}

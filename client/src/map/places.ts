@@ -71,6 +71,7 @@ export function distanceKm(a: { lat: number; lng: number }, b: { lat: number; ln
   return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)))
 }
 
+/** Largest distance between any two of the points. */
 export function maxSpreadKm(points: { lat: number; lng: number }[]): number {
   let max = 0
   for (let i = 0; i < points.length; i++)

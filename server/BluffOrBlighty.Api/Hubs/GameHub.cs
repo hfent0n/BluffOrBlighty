@@ -63,6 +63,8 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
 
     public Task RemoveBot(string botId) => Act((g, me) => g.RemoveBot(me, botId));
 
+    public Task SetMaxSpread(double? km) => Act((g, me) => g.SetMaxSpread(me, km));
+
     public Task SetMap(string mapId) => Act((g, me) => g.SetMap(me, mapId));
 
     public Task StartGame() => Act((g, me) => g.Start(me));

@@ -29,7 +29,7 @@ public class CampaignTests
     }
 
     private static SubmissionRequest Picks(int seed) =>
-        BotBrain.ChooseSubmission(Norfolk, MapPresets.Get("north-norfolk"), 15, new Random(seed))!;
+        BotBrain.ChooseSubmission(Norfolk, MapPresets.Get("north-norfolk"), new Random(seed))!;
 
     /// <summary>Plays one leg. The human always spots the fake; the bot votes for option 0 (right or wrong).</summary>
     private static void PlayLeg(GameSession game, string me, string bot, int seed, bool botFindsFake)

@@ -9,7 +9,8 @@ renames one of them with a made-up name, and everyone else tries to spot the fak
    "Anywhere", or a preset area such as North Norfolk or Swaledale. Players then have to stay
    inside that area.
 2. **Picking**: everyone at once scrolls the map and clicks **3 real place labels** within
-   the map's area and within 15 km of each other, picks one to **rename**, and types a fake name.
+   the map's area, picks one to **rename**, and types a fake name. The host sets how far apart the
+   3 places may be with a slider in the lobby: 1–50 km (default 15) or no limit.
 3. **Guessing**: one round per player. The map zooms out to their 3 places. The base map's
    own labels there are hidden and replaced with game labels in the same style, so the fake
    sits where a real village really is and looks just like its neighbours. Everyone else votes.

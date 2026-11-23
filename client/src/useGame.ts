@@ -124,6 +124,7 @@ export function useGame() {
     removeBot: (botId: string) => call('RemoveBot', botId),
     joinGame: (code: string, name: string) => enter('JoinGame', code, name),
     setMap: (mapId: string) => call('SetMap', mapId),
+    setMaxSpread: (km: number | null) => call('SetMaxSpread', km),
     startGame: () => call('StartGame'),
     submit: (s: SubmissionRequest) => call('Submit', s),
     vote: (optionIndex: number) => call('Vote', optionIndex),

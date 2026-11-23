@@ -84,7 +84,7 @@ public sealed class BotDriver(
             foreach (var tile in TileMath.BlockAround(lat, lng))
                 found.AddRange(await places.PlacesInTileAsync(tile));
 
-            if (BotBrain.ChooseSubmission(found, work.Map, work.MaxSpreadKm, rng, work.Profile.Style) is { } submission)
+            if (BotBrain.ChooseSubmission(found, work.Map, rng, work.MaxSpreadKm, work.Profile.Style) is { } submission)
             {
                 try
                 {

@@ -3,11 +3,13 @@ import { MapsScreen, SelectedMapCard } from '../maps/MapsScreen'
 import { BOT_LEVELS, type BotLevel, type GameView } from '../types'
 import type { GameApi } from '../useGame'
 import { PlayerList } from './PlayerList'
+import { SpreadSlider } from './SpreadSlider'
 
 export function LobbyScreen({ game, api }: { game: GameView; api: GameApi }) {
   const isHost = game.meId === game.hostId
   const connectedCount = game.players.filter((p) => p.isConnected).length
-  const [browsing, setBrowsing] = useState(false)
+  // The host chooses the map first, so open the maps screen straight away for them.
+  const [browsing, setBrowsing] = useState(isHost)
   const [level, setLevel] = useState<BotLevel>('Normal')
   const botCount = game.players.filter((p) => p.isBot).length
 
@@ -39,6 +41,7 @@ export function LobbyScreen({ game, api }: { game: GameView; api: GameApi }) {
         onChange={() => setBrowsing(true)}
         changeLabel={isHost ? 'Change map' : 'Browse maps'}
       />
+      <SpreadSlider game={game} api={api} />
       <PlayerList
         game={game}
         action={(p) =>

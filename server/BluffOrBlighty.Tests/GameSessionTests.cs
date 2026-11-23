@@ -144,13 +144,60 @@ public class GameSessionTests
     }
 
     [Fact]
-    public void Places_must_be_close_together()
+    public void Places_must_be_within_15_km_by_default()
     {
         var (game, alice, _, _) = ThreePlayerGame();
+        Assert.Equal(15, game.ViewFor(alice.PlayerId).MaxSpreadKm);
         var penzance = new PlacePick("Penzance", 50.1186, -5.5371);
         var ex = Assert.Throws<GameException>(() =>
             game.Submit(alice.PlayerId, new SubmissionRequest([GreatSnoring, penzance], Thursford, "Fakeville")));
-        Assert.Contains("km", ex.Message);
+        Assert.Contains("15 km", ex.Message);
+    }
+
+    [Fact]
+    public void Host_can_turn_the_distance_limit_off()
+    {
+        var game = new GameSession("TEST", new Random(1), TimeProvider.System);
+        var alice = game.AddPlayer("Alice", "c1");
+        game.AddPlayer("Bob", "c2");
+        game.SetMaxSpread(alice.PlayerId, null);
+        game.Start(alice.PlayerId);
+
+        var penzance = new PlacePick("Penzance", 50.1186, -5.5371);
+        game.Submit(alice.PlayerId, new SubmissionRequest([GreatSnoring, penzance], Thursford, "Fakeville"));
+        Assert.Null(game.ViewFor(alice.PlayerId).MaxSpreadKm);
+    }
+
+    [Fact]
+    public void Host_can_tighten_the_distance_limit()
+    {
+        var game = new GameSession("TEST", new Random(1), TimeProvider.System);
+        var alice = game.AddPlayer("Alice", "c1");
+        game.AddPlayer("Bob", "c2");
+        game.SetMaxSpread(alice.PlayerId, 3); // Great Snoring to Thursford is about 4 km
+        game.Start(alice.PlayerId);
+
+        var ex = Assert.Throws<GameException>(() => game.Submit(alice.PlayerId, NorfolkSubmission()));
+        Assert.Contains("3 km", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(0.5)]
+    [InlineData(51.0)]
+    [InlineData(double.NaN)]
+    public void Distance_limit_must_be_in_range(double km)
+    {
+        var game = new GameSession("TEST", new Random(1), TimeProvider.System);
+        var alice = game.AddPlayer("Alice", "c1");
+        Assert.Throws<GameException>(() => game.SetMaxSpread(alice.PlayerId, km));
+    }
+
+    [Fact]
+    public void Only_host_sets_the_limit_and_only_in_the_lobby()
+    {
+        var (game, alice, bob, _) = ThreePlayerGame(); // already started
+        Assert.Throws<GameException>(() => game.SetMaxSpread(bob.PlayerId, 10));
+        Assert.Throws<GameException>(() => game.SetMaxSpread(alice.PlayerId, 10));
     }
 
     [Fact]
