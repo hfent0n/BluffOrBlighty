@@ -5,10 +5,15 @@ using Microsoft.AspNetCore.SignalR;
 namespace BluffOrBlighty.Api.Hubs;
 
 /// <summary>
-/// Thin real-time layer over <see cref="GameSession"/>. Every change pushes a
-/// "state" message to each player, holding only what that player is allowed to see.
+/// Thin real-time layer over <see cref="GameSession"/>. Every change goes through
+/// <see cref="GameManager"/> (load, change, save), then pushes a "state" message to each player
+/// holding only what that player is allowed to see.
 /// </summary>
-public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, BotDriver bots) : Hub
+public sealed class GameHub(
+    GameManager games,
+    IGameBroadcaster broadcaster,
+    BotDriver bots,
+    IHostApplicationLifetime lifetime) : Hub
 {
     private const string CodeKey = "code";
     private const string PlayerKey = "playerId";
@@ -17,9 +22,12 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
     public async Task<JoinResult> StartCampaign(string playerName, string levelId)
     {
         var level = Run(() => CampaignLevels.Get(levelId));
-        var game = games.Create();
-        var result = Run(() => game.AddPlayer(playerName, Context.ConnectionId));
-        Run(() => game.StartCampaign(result.PlayerId, level));
+        var (game, result) = await Run(() => games.CreateAsync(g =>
+        {
+            var joined = g.AddPlayer(playerName, Context.ConnectionId);
+            g.StartCampaign(joined.PlayerId, level);
+            return joined;
+        }));
         await Bind(result);
         await Broadcast(game);
         return result;
@@ -27,8 +35,7 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
 
     public async Task<JoinResult> CreateGame(string playerName)
     {
-        var game = games.Create();
-        var result = Run(() => game.AddPlayer(playerName, Context.ConnectionId));
+        var (game, result) = await Run(() => games.CreateAsync(g => g.AddPlayer(playerName, Context.ConnectionId)));
         await Bind(result);
         await Broadcast(game);
         return result;
@@ -36,18 +43,19 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
 
     public async Task<JoinResult> JoinGame(string code, string playerName)
     {
-        var game = Run(() => games.Get(code));
-        var result = Run(() => game.AddPlayer(playerName, Context.ConnectionId));
+        var (game, result) = await Run(() => games.UpdateAsync(code, g => g.AddPlayer(playerName, Context.ConnectionId)));
         await Bind(result);
         await Broadcast(game);
         return result;
     }
 
-    /// <summary>Reattach after a refresh or dropped connection, using the secret token from join.</summary>
+    /// <summary>
+    /// Reattach after a refresh, a dropped connection or a server deploy, using the secret token
+    /// from join. The game is loaded from the store, so this works on any server instance.
+    /// </summary>
     public async Task<JoinResult> Rejoin(string code, string token)
     {
-        var game = Run(() => games.Get(code));
-        var result = Run(() => game.Reconnect(token, Context.ConnectionId));
+        var (game, result) = await Run(() => games.UpdateAsync(code, g => g.Reconnect(token, Context.ConnectionId)));
         await Bind(result);
         await Broadcast(game);
         return result;
@@ -55,8 +63,8 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
 
     public async Task<string> AddBot(BotLevel level)
     {
-        var (game, me) = Current();
-        var id = Run(() => game.AddBot(me, level));
+        var (code, me) = Current();
+        var (game, id) = await Run(() => games.UpdateAsync(code, g => g.AddBot(me, level)));
         await Broadcast(game);
         return id;
     }
@@ -79,11 +87,21 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        if (Context.Items.TryGetValue(CodeKey, out var code) && Context.Items.TryGetValue(PlayerKey, out var me) &&
-            games.TryGet((string)code!) is { } game)
+        // When this server is shutting down (e.g. a deploy), every connection drops at once.
+        // Those players haven't left: they'll reconnect to the new server and rejoin. Marking
+        // them away now could start rounds without them, so leave the game as it is.
+        if (!lifetime.ApplicationStopping.IsCancellationRequested &&
+            Context.Items.TryGetValue(CodeKey, out var code) && Context.Items.TryGetValue(PlayerKey, out var me))
         {
-            game.Disconnect((string)me!, Context.ConnectionId);
-            await Broadcast(game);
+            try
+            {
+                var game = await games.UpdateAsync((string)code!, g => g.Disconnect((string)me!, Context.ConnectionId));
+                await Broadcast(game);
+            }
+            catch (GameException)
+            {
+                // The game has expired; nothing to update.
+            }
         }
 
         await base.OnDisconnectedAsync(exception);
@@ -91,26 +109,33 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
 
     private async Task Act(Action<GameSession, string> action)
     {
-        var (game, me) = Current();
-        Run(() => action(game, me));
+        var (code, me) = Current();
+        var game = await Run(() => games.UpdateAsync(code, g => action(g, me)));
         await Broadcast(game);
     }
 
-    private (GameSession Game, string Me) Current()
+    private (string Code, string Me) Current()
     {
         if (!Context.Items.TryGetValue(CodeKey, out var code) || !Context.Items.TryGetValue(PlayerKey, out var me))
             throw new HubException("Join a game first.");
-        return (Run(() => games.Get((string)code!)), (string)me!);
+        return ((string)code!, (string)me!);
     }
 
     /// <summary>Points this connection at a game, leaving whatever game it was in before.</summary>
     private async Task Bind(JoinResult result)
     {
         if (Context.Items.TryGetValue(CodeKey, out var oldCode) && Context.Items.TryGetValue(PlayerKey, out var oldMe) &&
-            (string)oldCode! != result.Code && games.TryGet((string)oldCode!) is { } old)
+            (string)oldCode! != result.Code)
         {
-            old.Disconnect((string)oldMe!, Context.ConnectionId);
-            await broadcaster.BroadcastAsync(old);
+            try
+            {
+                var old = await games.UpdateAsync((string)oldCode!, g => g.Disconnect((string)oldMe!, Context.ConnectionId));
+                await broadcaster.BroadcastAsync(old);
+            }
+            catch (GameException)
+            {
+                // The old game has gone; nothing to leave.
+            }
         }
 
         Context.Items[CodeKey] = result.Code;
@@ -131,5 +156,15 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
         catch (GameException e) { throw new HubException(e.Message); }
     }
 
-    private static void Run(Action f) => Run(() => { f(); return 0; });
+    private static async Task<T> Run<T>(Func<Task<T>> f)
+    {
+        try { return await f(); }
+        catch (GameException e) { throw new HubException(e.Message); }
+    }
+
+    private static async Task<GameSession> Run(Func<Task<GameSession>> f)
+    {
+        try { return await f(); }
+        catch (GameException e) { throw new HubException(e.Message); }
+    }
 }

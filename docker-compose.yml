@@ -1,5 +1,5 @@
-# Postgres for later (user accounts, game history, OS Open Names gazetteer).
-# The API doesn't use it yet; games are held in memory.
+# Local services. Redis: game state (optional locally; without it games are kept in memory).
+# Postgres: for later (user accounts, game history). The API doesn't use it yet.
 services:
   db:
     image: postgis/postgis:17-3.5
@@ -11,6 +11,12 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+
+  # Game state + SignalR backplane. Run the API with Redis__ConnectionString=localhost:6379 to use it.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
 
 volumes:
   pgdata:

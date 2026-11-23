@@ -1,4 +1,10 @@
-import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr'
+import {
+  HubConnection,
+  HubConnectionBuilder,
+  HubConnectionState,
+  LogLevel,
+  type IRetryPolicy,
+} from '@microsoft/signalr'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BotLevel, GameView, JoinResult, SubmissionRequest } from './types'
 
@@ -27,6 +33,15 @@ function saveSession(s: Session | null) {
   }
 }
 
+/**
+ * Keep trying to reconnect for up to 2 minutes, which covers a server deploy (the new version
+ * starts and picks the game up from Redis). The default policy gives up after about 45 seconds.
+ */
+const reconnectPolicy: IRetryPolicy = {
+  nextRetryDelayInMilliseconds: ({ previousRetryCount, elapsedMilliseconds }) =>
+    elapsedMilliseconds > 120_000 ? null : [0, 1000, 2000, 3000][previousRetryCount] ?? 5000,
+}
+
 /** SignalR wraps HubException messages; keep only the part meant for players. */
 function cleanError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
@@ -42,7 +57,7 @@ export function useGame() {
   useEffect(() => {
     const conn = new HubConnectionBuilder()
       .withUrl('/hub/game')
-      .withAutomaticReconnect()
+      .withAutomaticReconnect(reconnectPolicy)
       .configureLogging(LogLevel.Warning)
       .build()
     connRef.current = conn
@@ -66,7 +81,11 @@ export function useGame() {
       setConnected(true)
       await rejoin()
     })
-    conn.onclose(() => setConnected(false))
+    conn.onclose((e) => {
+      setConnected(false)
+      // Only after the retries above have run out (or the server closed us), not on a normal leave.
+      if (e) setError('Lost connection to the server. Refresh the page to rejoin your game.')
+    })
 
     let cancelled = false
     conn

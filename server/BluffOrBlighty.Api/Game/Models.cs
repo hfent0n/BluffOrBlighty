@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace BluffOrBlighty.Api.Game;
 
 public enum GamePhase
@@ -77,19 +79,22 @@ public sealed class Player
 
     public BotLevel? BotLevel { get; init; }
     public BotProfile? BotProfile { get; init; }
+
+    [JsonIgnore]
     public bool IsConnected => IsBot || ConnectionId is not null;
     public int Score { get; set; }
 }
 
-internal sealed record RoundOption(string Label, double Lat, double Lng, string? Layer);
+public sealed record RoundOption(string Label, double Lat, double Lng, string? Layer);
 
-internal sealed class Round
+/// <summary>One player's places in the guessing phase. Holds the answer, so it's never sent to clients as-is.</summary>
+public sealed class Round
 {
     public required string AuthorId { get; init; }
     public required RoundOption[] Options { get; init; }
     public required int FakeIndex { get; init; }
     public required string OriginalName { get; init; }
-    public Dictionary<string, int> Votes { get; } = [];
+    public Dictionary<string, int> Votes { get; set; } = [];
     public bool Revealed { get; set; }
 }
 

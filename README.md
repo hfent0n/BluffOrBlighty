@@ -40,7 +40,7 @@ bots (Easy / Normal / Hard) to any lobby.
 | `client/` | React + Vite + TypeScript, [MapLibre GL JS](https://maplibre.org/) |
 | `server/BluffOrBlighty.Api` | ASP.NET Core (.NET 10), SignalR hub at `/hub/game` |
 | `server/BluffOrBlighty.Tests` | xUnit tests for the game rules |
-| `docker-compose.yml` | Postgres + PostGIS (not used yet) |
+| `docker-compose.yml` | Redis (optional locally: game state + SignalR backplane), Postgres + PostGIS (not used yet) |
 
 ## Running locally
 
@@ -94,7 +94,9 @@ client/src/
   screens/            Home, Lobby, Submit, Guess, Finished
 server/BluffOrBlighty.Api/
   Game/GameSession.cs all game rules (phases, validation, scoring, per-player views)
-  Game/GameManager.cs in-memory game store + idle cleanup
+  Game/GameState.cs   all of a game's data, as JSON-serialisable state
+  Game/GameStore.cs   where state lives: in memory (dev/tests) or Redis (production)
+  Game/GameManager.cs load → change → save, with optimistic locking and retries
   Game/MapPresets.cs  preset map areas (also served at /api/maps)
   Bots/               tile place source, fake-name generator, bot decisions, bot driver
   Hubs/GameHub.cs     thin SignalR layer; pushes a "state" view to each player
@@ -104,5 +106,7 @@ server/BluffOrBlighty.Api/
 
 GitHub Actions tests every PR and deploys `main` to Google Cloud Run as a single container.
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the one-time setup (`scripts/gcp-setup.sh`).
+With Redis configured (`scripts/redis-secret.sh`), game state is kept in Redis, so deploys don't
+end games in progress: players reconnect and pick up where they left off.
 
 Ideas for later are in [docs/IDEAS.md](docs/IDEAS.md).

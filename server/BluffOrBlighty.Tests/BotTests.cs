@@ -138,20 +138,27 @@ public class BotTests
     [Fact]
     public async Task Driver_plays_a_full_game_against_a_human()
     {
-        var game = new GameSession("TEST", new Random(1), TimeProvider.System);
-        var host = game.AddPlayer("Alice", "c1");
-        game.SetMap(host.PlayerId, NorthNorfolk.Id);
-        game.AddBot(host.PlayerId, BotLevel.Hard);
-        game.Start(host.PlayerId);
+        // Bots save their moves through the game store, as in the real server.
+        var games = new GameManager(new InMemoryGameStore(TimeProvider.System), TimeProvider.System);
+        var (game, host) = await games.CreateAsync(g =>
+        {
+            var h = g.AddPlayer("Alice", "c1");
+            g.SetMap(h.PlayerId, NorthNorfolk.Id);
+            g.AddBot(h.PlayerId, BotLevel.Hard);
+            g.Start(h.PlayerId);
+            return h;
+        });
 
-        var driver = new BotDriver(new FakePlaces(Norfolk), new NoBroadcast(),
+        var driver = new BotDriver(games, new FakePlaces(Norfolk), new NoBroadcast(),
             new BotTiming { MinThink = TimeSpan.Zero, MaxThink = TimeSpan.Zero }, NullLogger<BotDriver>.Instance);
 
         await Task.WhenAll(driver.Kick(game)); // bot submits
-        game.Submit(host.PlayerId, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, new Random(7))!);
+        game = await games.UpdateAsync(game.Code,
+            g => g.Submit(host.PlayerId, BotBrain.ChooseSubmission(Norfolk, NorthNorfolk, new Random(7))!));
         Assert.Equal(GamePhase.Guessing, game.Phase);
 
         await Task.WhenAll(driver.Kick(game)); // bot votes on Alice's round
+        game = (await games.TryGetAsync(game.Code))!;
         Assert.NotNull(game.ViewFor(host.PlayerId).Round!.Reveal); // all voters done -> revealed
     }
 

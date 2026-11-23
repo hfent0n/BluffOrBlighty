@@ -17,6 +17,7 @@ public sealed class BotTiming
 /// need to do and runs each piece of work once, in the background.
 /// </summary>
 public sealed class BotDriver(
+    GameManager games,
     IPlaceSource places,
     IGameBroadcaster broadcaster,
     BotTiming timing,
@@ -24,7 +25,16 @@ public sealed class BotDriver(
 {
     private readonly ConcurrentDictionary<string, byte> _inFlight = new();
 
-    /// <summary>Starts any bot work the game is waiting on. Returns the tasks (for tests); callers needn't await.</summary>
+    /// <summary>
+    /// Starts any bot work the game (as of this snapshot) is waiting on. Bot moves are saved
+    /// through <see cref="GameManager"/>, so they apply to the latest state even if it has moved
+    /// on. Returns the tasks (for tests); callers needn't await.
+    /// </summary>
+    /// <remarks>
+    /// Work is de-duplicated per server instance. If two instances briefly overlap (a deploy),
+    /// both might act for a bot; that's harmless, as a second submit replaces the first and
+    /// stale votes are rejected.
+    /// </remarks>
     public IReadOnlyList<Task> Kick(GameSession game)
     {
         var started = new List<Task>();
@@ -34,9 +44,10 @@ public sealed class BotDriver(
             if (!_inFlight.TryAdd(key, 0)) continue;
             started.Add(Task.Run(async () =>
             {
+                GameSession? latest = null;
                 try
                 {
-                    await RunAsync(game, work);
+                    latest = await RunAsync(game.Code, work);
                 }
                 catch (Exception e)
                 {
@@ -47,31 +58,32 @@ public sealed class BotDriver(
                     _inFlight.TryRemove(key, out _);
                 }
 
+                latest ??= await games.TryGetAsync(game.Code);
+                if (latest is null) return; // game has expired
+
                 // Changes made by this bot may give other bots something to do.
-                await broadcaster.BroadcastAsync(game);
-                await Task.WhenAll(Kick(game));
+                await broadcaster.BroadcastAsync(latest);
+                await Task.WhenAll(Kick(latest));
             }));
         }
 
         return started;
     }
 
-    private async Task RunAsync(GameSession game, BotWork work)
+    /// <summary>Does the work and returns the game as saved, or null if nothing was saved.</summary>
+    private async Task<GameSession?> RunAsync(string code, BotWork work)
     {
         var rng = new Random();
         await Think(rng);
-        switch (work)
+        return work switch
         {
-            case BotSubmitWork s:
-                await SubmitAsync(game, s, rng);
-                break;
-            case BotVoteWork v:
-                await VoteAsync(game, v, rng);
-                break;
-        }
+            BotSubmitWork s => await SubmitAsync(code, s, rng),
+            BotVoteWork v => await VoteAsync(code, v, rng),
+            _ => null,
+        };
     }
 
-    private async Task SubmitAsync(GameSession game, BotSubmitWork work, Random rng)
+    private async Task<GameSession?> SubmitAsync(string code, BotSubmitWork work, Random rng)
     {
         // "Anywhere" has no area, so the bot picks somewhere it knows has good names.
         // ("Anywhere" means anywhere in the UK, so stick to UK areas.)
@@ -91,8 +103,7 @@ public sealed class BotDriver(
             {
                 try
                 {
-                    game.Submit(work.BotId, submission);
-                    return;
+                    return await games.UpdateAsync(code, g => g.Submit(work.BotId, submission));
                 }
                 catch (GameException e)
                 {
@@ -102,11 +113,11 @@ public sealed class BotDriver(
         }
 
         logger.LogWarning("Bot {Bot} couldn't find places in {Map}; removing it from game {Code}",
-            work.BotId, work.Map.Id, game.Code);
-        game.DropBot(work.BotId);
+            work.BotId, work.Map.Id, code);
+        return await games.UpdateAsync(code, g => g.DropBot(work.BotId));
     }
 
-    private async Task VoteAsync(GameSession game, BotVoteWork work, Random rng)
+    private async Task<GameSession?> VoteAsync(string code, BotVoteWork work, Random rng)
     {
         bool[] found;
         try
@@ -130,11 +141,12 @@ public sealed class BotDriver(
         var choice = BotBrain.ChooseVote(found, work.Profile.Knowledge, rng);
         try
         {
-            game.Vote(work.BotId, choice, work.RoundIndex, work.Leg);
+            return await games.UpdateAsync(code, g => g.Vote(work.BotId, choice, work.RoundIndex, work.Leg));
         }
         catch (GameException)
         {
             // The host revealed or moved on while the bot was thinking. Nothing to do.
+            return null;
         }
     }
 

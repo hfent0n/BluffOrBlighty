@@ -3,10 +3,11 @@ using System.Security.Cryptography;
 namespace BluffOrBlighty.Api.Game;
 
 /// <summary>
-/// One game room. Every public method takes the lock, so the hub can call it
-/// from many connections at once.
+/// The rules of one game room, acting on its <see cref="GameState"/>. Every public method takes
+/// the lock, so the hub can call it from many connections at once. Across server instances,
+/// <see cref="GameManager"/> loads, changes and saves the state with optimistic locking.
 /// </summary>
-public sealed class GameSession(string code, Random random, TimeProvider time)
+public sealed class GameSession
 {
     public const int MaxPlayers = 12;
     public const int MaxNameLength = 60;
@@ -19,26 +20,39 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     public const double MaxSpreadSettingKm = 50;
 
     private readonly object _lock = new();
-    private readonly List<Player> _players = [];
-    private readonly Dictionary<string, SubmissionRequest> _submissions = [];
-    private readonly List<Round> _rounds = [];
-    private int _roundIndex;
-    private string _hostId = "";
-    private MapPreset _map = MapPresets.Anywhere;
+    private readonly GameState _s;
+    private readonly Random random;
+    private readonly TimeProvider time;
 
-    /// <summary>Max distance between a player's 3 picks. Null means no limit.</summary>
-    private double? _maxSpreadKm = DefaultMaxSpreadKm;
-    private int _leg = 1;
-    private int _legs = 1;
-    private CampaignLevel? _campaign;
+    /// <summary>A brand-new game.</summary>
+    public GameSession(string code, Random random, TimeProvider time)
+        : this(new GameState { Code = code, LastActivity = time.GetUtcNow() }, random, time)
+    {
+    }
 
-    // Per-player tallies across all legs, for campaign stars.
-    private readonly Dictionary<string, int> _spotted = [];
-    private readonly Dictionary<string, int> _fooled = [];
+    /// <summary>An existing game, e.g. loaded from the store.</summary>
+    public GameSession(GameState state, Random random, TimeProvider time)
+    {
+        _s = state;
+        this.random = random;
+        this.time = time;
+    }
 
-    public string Code { get; } = code;
-    public GamePhase Phase { get; private set; } = GamePhase.Lobby;
-    public DateTimeOffset LastActivity { get; private set; } = time.GetUtcNow();
+    /// <summary>The underlying data, for saving. Don't change it outside the lock.</summary>
+    public GameState State => _s;
+
+    public string Code => _s.Code;
+
+    public GamePhase Phase
+    {
+        get => _s.Phase;
+        private set => _s.Phase = value;
+    }
+
+    public DateTimeOffset LastActivity => _s.LastActivity;
+
+    private MapPreset Map => MapPresets.Get(_s.MapId);
+    private CampaignLevel? Campaign => _s.CampaignLevelId is { } id ? CampaignLevels.Get(id) : null;
 
     public JoinResult AddPlayer(string name, string connectionId)
     {
@@ -46,11 +60,11 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         {
             Touch();
             if (Phase != GamePhase.Lobby) throw new GameException("That game has already started.");
-            if (_campaign is not null && _players.Count > 0) throw new GameException("That's a solo campaign game.");
-            if (_players.Count >= MaxPlayers) throw new GameException("That game is full.");
+            if (Campaign is not null && _s.Players.Count > 0) throw new GameException("That's a solo campaign game.");
+            if (_s.Players.Count >= MaxPlayers) throw new GameException("That game is full.");
 
             var cleanName = CleanName(name, "Your name");
-            if (_players.Any(p => string.Equals(p.Name, cleanName, StringComparison.OrdinalIgnoreCase)))
+            if (_s.Players.Any(p => string.Equals(p.Name, cleanName, StringComparison.OrdinalIgnoreCase)))
                 throw new GameException("Someone in this game already has that name.");
 
             var player = new Player
@@ -60,8 +74,8 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 Name = cleanName,
                 ConnectionId = connectionId,
             };
-            _players.Add(player);
-            if (_players.Count == 1) _hostId = player.Id;
+            _s.Players.Add(player);
+            if (_s.Players.Count == 1) _s.HostId = player.Id;
             return new JoinResult(Code, player.Id, player.Token);
         }
     }
@@ -71,7 +85,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         lock (_lock)
         {
             Touch();
-            var player = _players.FirstOrDefault(p => p.Token == token)
+            var player = _s.Players.FirstOrDefault(p => p.Token == token)
                          ?? throw new GameException("Couldn't find you in that game.");
             player.ConnectionId = connectionId;
             return new JoinResult(Code, player.Id, player.Token);
@@ -105,10 +119,10 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             Touch();
             RequireHost(playerId);
             if (Phase != GamePhase.Lobby) throw new GameException("You can only add bots in the lobby.");
-            if (_players.Count >= MaxPlayers) throw new GameException("That game is full.");
-            if (_players.Count(p => p.IsBot) >= MaxBots) throw new GameException($"That's enough bots (max {MaxBots}).");
+            if (_s.Players.Count >= MaxPlayers) throw new GameException("That game is full.");
+            if (_s.Players.Count(p => p.IsBot) >= MaxBots) throw new GameException($"That's enough bots (max {MaxBots}).");
 
-            var name = BotNames.First(n => _players.All(p => !string.Equals(p.Name, n, StringComparison.OrdinalIgnoreCase)));
+            var name = BotNames.First(n => _s.Players.All(p => !string.Equals(p.Name, n, StringComparison.OrdinalIgnoreCase)));
             var bot = new Player
             {
                 Id = Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),
@@ -118,7 +132,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 BotLevel = level,
                 BotProfile = BotProfile.For(level),
             };
-            _players.Add(bot);
+            _s.Players.Add(bot);
             return bot.Id;
         }
     }
@@ -133,13 +147,13 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         {
             Touch();
             RequireHost(playerId);
-            if (Phase != GamePhase.Lobby || _players.Count != 1)
+            if (Phase != GamePhase.Lobby || _s.Players.Count != 1)
                 throw new GameException("A campaign match needs a fresh game.");
 
-            _campaign = level;
-            _map = MapPresets.Get(level.MapId);
-            _legs = level.Legs;
-            _players.Add(new Player
+            _s.CampaignLevelId = level.Id;
+            _s.MapId = MapPresets.Get(level.MapId).Id;
+            _s.Legs = level.Legs;
+            _s.Players.Add(new Player
             {
                 Id = Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),
                 Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant(),
@@ -159,7 +173,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             RequireHost(playerId);
             if (Phase != GamePhase.Lobby) throw new GameException("You can only remove bots in the lobby.");
             if (Find(botId) is not { IsBot: true } bot) throw new GameException("That isn't a bot.");
-            _players.Remove(bot);
+            _s.Players.Remove(bot);
         }
     }
 
@@ -171,8 +185,8 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             if (Find(botId) is not { IsBot: true } bot) return;
             if (Phase == GamePhase.Submitting)
             {
-                _players.Remove(bot);
-                _submissions.Remove(botId);
+                _s.Players.Remove(bot);
+                _s.Submissions.Remove(botId);
                 TryStartGuessing();
             }
         }
@@ -184,17 +198,17 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         lock (_lock)
         {
             var work = new List<BotWork>();
-            foreach (var bot in _players.Where(p => p.IsBot))
+            foreach (var bot in _s.Players.Where(p => p.IsBot))
             {
                 var profile = bot.BotProfile ?? BotProfile.For(BotLevel.Normal);
-                if (Phase == GamePhase.Submitting && !_submissions.ContainsKey(bot.Id))
+                if (Phase == GamePhase.Submitting && !_s.Submissions.ContainsKey(bot.Id))
                 {
-                    work.Add(new BotSubmitWork(bot.Id, profile, _leg, _map, _maxSpreadKm));
+                    work.Add(new BotSubmitWork(bot.Id, profile, _s.Leg, Map, _s.MaxSpreadKm));
                 }
                 else if (CurrentRound() is { Revealed: false } round && round.AuthorId != bot.Id &&
                          !round.Votes.ContainsKey(bot.Id))
                 {
-                    work.Add(new BotVoteWork(bot.Id, profile, _leg, _roundIndex,
+                    work.Add(new BotVoteWork(bot.Id, profile, _s.Leg, _s.RoundIndex,
                         round.Options.Select(o => new OptionView(o.Label, o.Lat, o.Lng, o.Layer)).ToArray()));
                 }
             }
@@ -213,7 +227,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             if (Phase != GamePhase.Lobby) throw new GameException("You can only change this in the lobby.");
             if (km is { } v && (!double.IsFinite(v) || v < MinSpreadSettingKm || v > MaxSpreadSettingKm))
                 throw new GameException($"Pick a distance between {MinSpreadSettingKm:0} and {MaxSpreadSettingKm:0} km, or no limit.");
-            _maxSpreadKm = km is { } k ? Math.Round(k, 1) : null;
+            _s.MaxSpreadKm = km is { } k ? Math.Round(k, 1) : null;
         }
     }
 
@@ -224,8 +238,8 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             Touch();
             RequireHost(playerId);
             if (Phase != GamePhase.Lobby) throw new GameException("You can only change the map in the lobby.");
-            if (_campaign is not null) throw new GameException("Campaign levels have a fixed map.");
-            _map = MapPresets.Get(mapId);
+            if (Campaign is not null) throw new GameException("Campaign levels have a fixed map.");
+            _s.MapId = MapPresets.Get(mapId).Id;
         }
     }
 
@@ -236,7 +250,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             Touch();
             RequireHost(playerId);
             if (Phase != GamePhase.Lobby) throw new GameException("The game has already started.");
-            if (_players.Count(p => p.IsConnected) < 2) throw new GameException("You need at least 2 players.");
+            if (_s.Players.Count(p => p.IsConnected) < 2) throw new GameException("You need at least 2 players.");
             Phase = GamePhase.Submitting;
         }
     }
@@ -248,7 +262,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             Touch();
             RequirePlayer(playerId);
             if (Phase != GamePhase.Submitting) throw new GameException("It isn't time to submit places.");
-            _submissions[playerId] = Validate(request);
+            _s.Submissions[playerId] = Validate(request);
             TryStartGuessing();
         }
     }
@@ -262,7 +276,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             Touch();
             RequirePlayer(playerId);
             var round = CurrentRound() ?? throw new GameException("There's nothing to vote on.");
-            if ((expectedRound is { } r && r != _roundIndex) || (expectedLeg is { } l && l != _leg))
+            if ((expectedRound is { } r && r != _s.RoundIndex) || (expectedLeg is { } l && l != _s.Leg))
                 throw new GameException("That round has finished.");
             if (round.Revealed) throw new GameException("This round has already been revealed.");
             if (round.AuthorId == playerId) throw new GameException("You can't vote on your own places.");
@@ -287,16 +301,16 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 return;
             }
 
-            _roundIndex++;
-            if (_roundIndex < _rounds.Count) return;
+            _s.RoundIndex++;
+            if (_s.RoundIndex < _s.Rounds.Count) return;
 
-            if (_leg < _legs)
+            if (_s.Leg < _s.Legs)
             {
                 // Next leg: everyone picks fresh places on the same map. Scores carry over.
-                _leg++;
-                _submissions.Clear();
-                _rounds.Clear();
-                _roundIndex = 0;
+                _s.Leg++;
+                _s.Submissions.Clear();
+                _s.Rounds.Clear();
+                _s.RoundIndex = 0;
                 Phase = GamePhase.Submitting;
             }
             else
@@ -312,15 +326,15 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         {
             Touch();
             RequireHost(playerId);
-            _players.RemoveAll(p => !p.IsConnected);
-            if (_campaign is not null) throw new GameException("Start the level again from the campaign screen.");
-            foreach (var p in _players) p.Score = 0;
-            _submissions.Clear();
-            _rounds.Clear();
-            _roundIndex = 0;
-            _leg = 1;
-            _spotted.Clear();
-            _fooled.Clear();
+            _s.Players.RemoveAll(p => !p.IsConnected);
+            if (Campaign is not null) throw new GameException("Start the level again from the campaign screen.");
+            foreach (var p in _s.Players) p.Score = 0;
+            _s.Submissions.Clear();
+            _s.Rounds.Clear();
+            _s.RoundIndex = 0;
+            _s.Leg = 1;
+            _s.Spotted.Clear();
+            _s.Fooled.Clear();
             Phase = GamePhase.Lobby;
         }
     }
@@ -330,7 +344,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     {
         lock (_lock)
         {
-            return _players
+            return _s.Players
                 .Where(p => p.ConnectionId is not null)
                 .Select(p => (p.ConnectionId!, BuildView(p.Id)))
                 .ToList();
@@ -362,15 +376,15 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 throw new GameException("One of the places has an invalid location.");
         }
 
-        if (picks.Any(p => !MapPresets.Contains(_map, p.Lat, p.Lng)))
-            throw new GameException($"All your places need to be inside the play area for {_map.Name}.");
+        if (picks.Any(p => !MapPresets.Contains(Map, p.Lat, p.Lng)))
+            throw new GameException($"All your places need to be inside the play area for {Map.Name}.");
 
         for (var i = 0; i < picks.Length; i++)
         for (var j = i + 1; j < picks.Length; j++)
         {
             var d = Geo.DistanceKm(picks[i], picks[j]);
             if (d < MinSeparationKm) throw new GameException("Pick 3 different places.");
-            if (_maxSpreadKm is { } max && d > max)
+            if (_s.MaxSpreadKm is { } max && d > max)
                 throw new GameException($"Keep all 3 places within {max:0.#} km of each other.");
         }
 
@@ -384,15 +398,15 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     private void TryStartGuessing()
     {
         if (Phase != GamePhase.Submitting) return;
-        var waitingOn = _players.Where(p => p.IsConnected && !_submissions.ContainsKey(p.Id));
+        var waitingOn = _s.Players.Where(p => p.IsConnected && !_s.Submissions.ContainsKey(p.Id));
         if (waitingOn.Any()) return;
-        if (_submissions.Count < 2) return; // nobody to guess against
+        if (_s.Submissions.Count < 2) return; // nobody to guess against
 
-        _rounds.Clear();
+        _s.Rounds.Clear();
         // Rounds follow join order so they're predictable; the options inside each one are shuffled.
-        foreach (var player in _players.Where(p => _submissions.ContainsKey(p.Id)))
+        foreach (var player in _s.Players.Where(p => _s.Submissions.ContainsKey(p.Id)))
         {
-            var s = _submissions[player.Id];
+            var s = _s.Submissions[player.Id];
             var options = new List<(RoundOption Option, bool IsFake)>
             {
                 (new RoundOption(s.Real[0].Name, s.Real[0].Lat, s.Real[0].Lng, s.Real[0].Layer), false),
@@ -400,7 +414,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 (new RoundOption(s.FakeName, s.Renamed.Lat, s.Renamed.Lng, s.Renamed.Layer), true),
             };
             var shuffled = options.OrderBy(_ => random.Next()).ToArray();
-            _rounds.Add(new Round
+            _s.Rounds.Add(new Round
             {
                 AuthorId = player.Id,
                 Options = shuffled.Select(o => o.Option).ToArray(),
@@ -409,7 +423,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             });
         }
 
-        _roundIndex = 0;
+        _s.RoundIndex = 0;
         Phase = GamePhase.Guessing;
     }
 
@@ -417,7 +431,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     {
         var round = CurrentRound();
         if (round is null || round.Revealed) return;
-        var voters = _players.Where(p => p.IsConnected && p.Id != round.AuthorId).ToList();
+        var voters = _s.Players.Where(p => p.IsConnected && p.Id != round.AuthorId).ToList();
         if (voters.Count > 0 && voters.All(p => round.Votes.ContainsKey(p.Id))) Reveal(round);
     }
 
@@ -430,18 +444,18 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             if (choice == round.FakeIndex)
             {
                 if (Find(voterId) is { } voter) voter.Score += 1;
-                _spotted[voterId] = _spotted.GetValueOrDefault(voterId) + 1;
+                _s.Spotted[voterId] = _s.Spotted.GetValueOrDefault(voterId) + 1;
             }
             else if (author is not null)
             {
                 author.Score += 1; // fooled someone
-                _fooled[author.Id] = _fooled.GetValueOrDefault(author.Id) + 1;
+                _s.Fooled[author.Id] = _s.Fooled.GetValueOrDefault(author.Id) + 1;
             }
         }
     }
 
     private Round? CurrentRound() =>
-        Phase == GamePhase.Guessing && _roundIndex < _rounds.Count ? _rounds[_roundIndex] : null;
+        Phase == GamePhase.Guessing && _s.RoundIndex < _s.Rounds.Count ? _s.Rounds[_s.RoundIndex] : null;
 
     private GameView BuildView(string meId)
     {
@@ -450,8 +464,8 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         if (round is not null)
         {
             roundView = new RoundView(
-                _roundIndex,
-                _rounds.Count,
+                _s.RoundIndex,
+                _s.Rounds.Count,
                 round.AuthorId,
                 round.Options.Select(o => new OptionView(o.Label, o.Lat, o.Lng, o.Layer)).ToArray(),
                 round.Votes.TryGetValue(meId, out var mine) ? mine : null,
@@ -461,41 +475,41 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                     : null);
         }
 
-        var players = _players.Select(p => new PlayerView(
+        var players = _s.Players.Select(p => new PlayerView(
             p.Id,
             p.Name,
             p.Score,
-            p.Id == _hostId,
+            p.Id == _s.HostId,
             p.IsConnected,
-            _submissions.ContainsKey(p.Id),
+            _s.Submissions.ContainsKey(p.Id),
             round?.Votes.ContainsKey(p.Id) ?? false,
             p.IsBot,
             p.BotLevel)).ToArray();
 
-        return new GameView(Code, Phase, meId, _hostId, _map, _maxSpreadKm, players, roundView, _leg, _legs,
+        return new GameView(Code, Phase, meId, _s.HostId, Map, _s.MaxSpreadKm, players, roundView, _s.Leg, _s.Legs,
             BuildCampaignView(meId));
     }
 
     private CampaignView? BuildCampaignView(string meId)
     {
-        if (_campaign is null) return null;
+        if (Campaign is not { } campaign) return null;
 
         CampaignResult? result = null;
         if (Phase == GamePhase.Finished && Find(meId) is { IsBot: false } me &&
-            _players.FirstOrDefault(p => p.IsBot) is { } opponent)
+            _s.Players.FirstOrDefault(p => p.IsBot) is { } opponent)
         {
             var won = me.Score > opponent.Score;
-            var spotted = _spotted.GetValueOrDefault(me.Id);
+            var spotted = _s.Spotted.GetValueOrDefault(me.Id);
             result = new CampaignResult(
                 won,
-                CampaignLevels.Stars(won, me.Score - opponent.Score, spotted, _legs),
+                CampaignLevels.Stars(won, me.Score - opponent.Score, spotted, _s.Legs),
                 me.Score,
                 opponent.Score,
                 spotted,
-                _fooled.GetValueOrDefault(me.Id));
+                _s.Fooled.GetValueOrDefault(me.Id));
         }
 
-        return new CampaignView(_campaign.Id, _campaign.Number, _campaign.Title, _campaign.Opponent, result);
+        return new CampaignView(campaign.Id, campaign.Number, campaign.Title, campaign.Opponent, result);
     }
 
     private static string CleanName(string? name, string field)
@@ -506,7 +520,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         return clean;
     }
 
-    private Player? Find(string playerId) => _players.FirstOrDefault(p => p.Id == playerId);
+    private Player? Find(string playerId) => _s.Players.FirstOrDefault(p => p.Id == playerId);
 
     private void RequirePlayer(string playerId)
     {
@@ -516,8 +530,8 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     private void RequireHost(string playerId)
     {
         RequirePlayer(playerId);
-        if (playerId != _hostId) throw new GameException("Only the host can do that.");
+        if (playerId != _s.HostId) throw new GameException("Only the host can do that.");
     }
 
-    private void Touch() => LastActivity = time.GetUtcNow();
+    private void Touch() => _s.LastActivity = time.GetUtcNow();
 }

@@ -42,16 +42,60 @@ Push to `main`. The run summary links to the Cloud Run URL, and the last step ch
 
 | Flag | Why |
 |---|---|
-| `--max-instances=1` | Games are held in memory. A second instance would split players across separate game stores. |
+| `--max-instances=1` | Without Redis, games are held in memory and a second instance would split them up. With Redis this can be raised: the Redis backplane links instances. |
 | `--session-affinity` | Keeps a browser on the same instance (matters if instances are ever increased). |
 | `--timeout=3600` | SignalR uses a long-lived WebSocket, and Cloud Run closes requests at the timeout. Clients reconnect and rejoin automatically. |
 | `--min-instances=0` | Costs nothing when nobody is playing. The first visitor after a quiet spell waits a few seconds for a cold start. |
 | `--allow-unauthenticated` | It's a public website. |
 
-**Known limitation:** deploying, or Cloud Run scaling to zero, restarts the instance, and that
-ends any game in progress. To fix this properly, move game state to Redis (Memorystore) or Postgres
-and add a SignalR backplane. Then `--max-instances` can be raised. This fits with the accounts
-work planned in [IDEAS.md](IDEAS.md).
+## Games that survive deploys (Redis)
+
+Without Redis, games live in the server's memory, and a deploy or a scale-to-zero ends any game in
+progress. With Redis configured:
+
+- **Game state** is saved to Redis after every move (`game:{code}`, a version and the JSON, expiring
+  after 6 hours idle). Saves are optimistic: a save from an out-of-date copy is rejected and retried,
+  so two instances can't overwrite each other while a deploy overlaps old and new revisions.
+- **SignalR's Redis backplane** delivers messages to players connected to the other instance.
+- **On shutdown** the server doesn't mark its dropped connections as "away"; those players are
+  about to reconnect. The client retries for up to 2 minutes, then rejoins with its saved token on
+  whichever instance it reaches.
+
+### Setting it up
+
+1. **Get a Redis.** It needs Lua scripting (`EVAL`) and pub/sub, which most hosted Redis services
+   support. [Upstash](https://upstash.com) has a free tier and a London (eu-west-2) region; Google's
+   Memorystore works too but has a monthly minimum. Copy the connection string in StackExchange.Redis
+   format, for example:
+
+   ```text
+   your-db.upstash.io:6379,password=YOUR_PASSWORD,ssl=True,abortConnect=False
+   ```
+
+2. **Store it in Secret Manager** (prompts for the string without echoing it, and gives the app's
+   service account read access):
+
+   ```bash
+   ./scripts/redis-secret.sh YOUR_PROJECT_ID
+   ```
+
+3. **Set the GitHub repository variable** `REDIS_SECRET` to the secret name (`redis-connection` by
+   default) and push. The deploy adds `--set-secrets=Redis__ConnectionString=…`, and the smoke test
+   fails unless `/api/health` reports `"store":"redis"`.
+
+The stored state includes each player's rejoin token, so keep the Redis private (password + TLS).
+
+### Trying it locally
+
+```bash
+docker compose up -d redis
+```
+
+```bash
+Redis__ConnectionString=localhost:6379 dotnet run --project server/BluffOrBlighty.Api
+```
+
+`/api/health` shows which store is in use. Without the variable, games are kept in memory.
 
 ## Later: Postgres
 

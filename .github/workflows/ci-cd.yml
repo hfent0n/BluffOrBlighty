@@ -112,9 +112,10 @@ jobs:
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      # Games live in memory, so the service runs as a single instance with session
-      # affinity, and a long request timeout keeps SignalR WebSockets open.
-      # A deploy restarts the instance, which ends any games in progress.
+      # With the REDIS_SECRET variable set, games live in Redis and survive deploys: players
+      # reconnect to the new revision and rejoin. Without it, games are in memory and a deploy
+      # ends them. A long request timeout keeps SignalR WebSockets open. (With Redis,
+      # --max-instances can be raised; the Redis backplane links the instances.)
       - name: Deploy
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -132,6 +133,13 @@ jobs:
             --timeout=3600
             --cpu=1
             --memory=512Mi
+            ${{ vars.REDIS_SECRET && format('--set-secrets=Redis__ConnectionString={0}:latest', vars.REDIS_SECRET) || '' }}
 
       - name: Smoke test
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 "${{ steps.deploy.outputs.url }}/api/health"
+        env:
+          EXPECT_STORE: ${{ vars.REDIS_SECRET && 'redis' || 'memory' }}
+        run: |
+          health=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 "${{ steps.deploy.outputs.url }}/api/health")
+          echo "$health"
+          # Catch a misconfigured secret: the app would quietly fall back to in-memory games.
+          echo "$health" | grep -q "\"store\":\"$EXPECT_STORE\"" || { echo "::error::Expected store '$EXPECT_STORE'"; exit 1; }

@@ -45,7 +45,7 @@ step() { printf '\n==> %s\n' "$*"; }
 
 step "Enabling APIs"
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
-  iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com "${G[@]}"
+  iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com secretmanager.googleapis.com "${G[@]}"
 
 step "Artifact Registry repo: $REPOSITORY ($REGION)"
 gcloud artifacts repositories describe "$REPOSITORY" --location "$REGION" "${G[@]}" >/dev/null 2>&1 ||
