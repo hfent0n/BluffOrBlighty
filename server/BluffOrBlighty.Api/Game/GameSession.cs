@@ -20,6 +20,13 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     private int _roundIndex;
     private string _hostId = "";
     private MapPreset _map = MapPresets.Anywhere;
+    private int _leg = 1;
+    private int _legs = 1;
+    private CampaignLevel? _campaign;
+
+    // Per-player tallies across all legs, for campaign stars.
+    private readonly Dictionary<string, int> _spotted = [];
+    private readonly Dictionary<string, int> _fooled = [];
 
     public string Code { get; } = code;
     public GamePhase Phase { get; private set; } = GamePhase.Lobby;
@@ -31,6 +38,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         {
             Touch();
             if (Phase != GamePhase.Lobby) throw new GameException("That game has already started.");
+            if (_campaign is not null && _players.Count > 0) throw new GameException("That's a solo campaign game.");
             if (_players.Count >= MaxPlayers) throw new GameException("That game is full.");
 
             var cleanName = CleanName(name, "Your name");
@@ -100,9 +108,38 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 Name = name,
                 IsBot = true,
                 BotLevel = level,
+                BotProfile = BotProfile.For(level),
             };
             _players.Add(bot);
             return bot.Id;
+        }
+    }
+
+    /// <summary>
+    /// Turns a fresh room with just its host into a campaign match against the level's
+    /// opponent, and starts it.
+    /// </summary>
+    public void StartCampaign(string playerId, CampaignLevel level)
+    {
+        lock (_lock)
+        {
+            Touch();
+            RequireHost(playerId);
+            if (Phase != GamePhase.Lobby || _players.Count != 1)
+                throw new GameException("A campaign match needs a fresh game.");
+
+            _campaign = level;
+            _map = MapPresets.Get(level.MapId);
+            _legs = level.Legs;
+            _players.Add(new Player
+            {
+                Id = Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),
+                Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant(),
+                Name = level.Opponent,
+                IsBot = true,
+                BotProfile = level.Bot,
+            });
+            Phase = GamePhase.Submitting;
         }
     }
 
@@ -141,15 +178,15 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             var work = new List<BotWork>();
             foreach (var bot in _players.Where(p => p.IsBot))
             {
-                var level = bot.BotLevel ?? BotLevel.Normal;
+                var profile = bot.BotProfile ?? BotProfile.For(BotLevel.Normal);
                 if (Phase == GamePhase.Submitting && !_submissions.ContainsKey(bot.Id))
                 {
-                    work.Add(new BotSubmitWork(bot.Id, level, _map, MaxSpreadKm));
+                    work.Add(new BotSubmitWork(bot.Id, profile, _leg, _map, MaxSpreadKm));
                 }
                 else if (CurrentRound() is { Revealed: false } round && round.AuthorId != bot.Id &&
                          !round.Votes.ContainsKey(bot.Id))
                 {
-                    work.Add(new BotVoteWork(bot.Id, level, _roundIndex,
+                    work.Add(new BotVoteWork(bot.Id, profile, _leg, _roundIndex,
                         round.Options.Select(o => new OptionView(o.Label, o.Lat, o.Lng, o.Layer)).ToArray()));
                 }
             }
@@ -165,6 +202,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             Touch();
             RequireHost(playerId);
             if (Phase != GamePhase.Lobby) throw new GameException("You can only change the map in the lobby.");
+            if (_campaign is not null) throw new GameException("Campaign levels have a fixed map.");
             _map = MapPresets.Get(mapId);
         }
     }
@@ -194,14 +232,16 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     }
 
     /// <param name="expectedRound">If set, the vote only counts if that round is still current (used by bots).</param>
-    public void Vote(string playerId, int optionIndex, int? expectedRound = null)
+    /// <param name="expectedLeg">Likewise for the leg, since round numbers restart each leg.</param>
+    public void Vote(string playerId, int optionIndex, int? expectedRound = null, int? expectedLeg = null)
     {
         lock (_lock)
         {
             Touch();
             RequirePlayer(playerId);
             var round = CurrentRound() ?? throw new GameException("There's nothing to vote on.");
-            if (expectedRound is { } r && r != _roundIndex) throw new GameException("That round has finished.");
+            if ((expectedRound is { } r && r != _roundIndex) || (expectedLeg is { } l && l != _leg))
+                throw new GameException("That round has finished.");
             if (round.Revealed) throw new GameException("This round has already been revealed.");
             if (round.AuthorId == playerId) throw new GameException("You can't vote on your own places.");
             if (optionIndex < 0 || optionIndex >= round.Options.Length) throw new GameException("Pick one of the options.");
@@ -226,7 +266,21 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             }
 
             _roundIndex++;
-            if (_roundIndex >= _rounds.Count) Phase = GamePhase.Finished;
+            if (_roundIndex < _rounds.Count) return;
+
+            if (_leg < _legs)
+            {
+                // Next leg: everyone picks fresh places on the same map. Scores carry over.
+                _leg++;
+                _submissions.Clear();
+                _rounds.Clear();
+                _roundIndex = 0;
+                Phase = GamePhase.Submitting;
+            }
+            else
+            {
+                Phase = GamePhase.Finished;
+            }
         }
     }
 
@@ -237,10 +291,14 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             Touch();
             RequireHost(playerId);
             _players.RemoveAll(p => !p.IsConnected);
+            if (_campaign is not null) throw new GameException("Start the level again from the campaign screen.");
             foreach (var p in _players) p.Score = 0;
             _submissions.Clear();
             _rounds.Clear();
             _roundIndex = 0;
+            _leg = 1;
+            _spotted.Clear();
+            _fooled.Clear();
             Phase = GamePhase.Lobby;
         }
     }
@@ -350,10 +408,12 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             if (choice == round.FakeIndex)
             {
                 if (Find(voterId) is { } voter) voter.Score += 1;
+                _spotted[voterId] = _spotted.GetValueOrDefault(voterId) + 1;
             }
             else if (author is not null)
             {
                 author.Score += 1; // fooled someone
+                _fooled[author.Id] = _fooled.GetValueOrDefault(author.Id) + 1;
             }
         }
     }
@@ -390,7 +450,30 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             p.IsBot,
             p.BotLevel)).ToArray();
 
-        return new GameView(Code, Phase, meId, _hostId, MaxSpreadKm, _map, players, roundView);
+        return new GameView(Code, Phase, meId, _hostId, MaxSpreadKm, _map, players, roundView, _leg, _legs,
+            BuildCampaignView(meId));
+    }
+
+    private CampaignView? BuildCampaignView(string meId)
+    {
+        if (_campaign is null) return null;
+
+        CampaignResult? result = null;
+        if (Phase == GamePhase.Finished && Find(meId) is { IsBot: false } me &&
+            _players.FirstOrDefault(p => p.IsBot) is { } opponent)
+        {
+            var won = me.Score > opponent.Score;
+            var spotted = _spotted.GetValueOrDefault(me.Id);
+            result = new CampaignResult(
+                won,
+                CampaignLevels.Stars(won, me.Score - opponent.Score, spotted, _legs),
+                me.Score,
+                opponent.Score,
+                spotted,
+                _fooled.GetValueOrDefault(me.Id));
+        }
+
+        return new CampaignView(_campaign.Id, _campaign.Number, _campaign.Title, _campaign.Opponent, result);
     }
 
     private static string CleanName(string? name, string field)

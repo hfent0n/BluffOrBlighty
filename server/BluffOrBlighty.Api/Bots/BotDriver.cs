@@ -84,7 +84,7 @@ public sealed class BotDriver(
             foreach (var tile in TileMath.BlockAround(lat, lng))
                 found.AddRange(await places.PlacesInTileAsync(tile));
 
-            if (BotBrain.ChooseSubmission(found, work.Map, work.MaxSpreadKm, rng) is { } submission)
+            if (BotBrain.ChooseSubmission(found, work.Map, work.MaxSpreadKm, rng, work.Profile.Style) is { } submission)
             {
                 try
                 {
@@ -124,10 +124,10 @@ public sealed class BotDriver(
             Array.Fill(found, true);
         }
 
-        var choice = BotBrain.ChooseVote(found, work.Level, rng);
+        var choice = BotBrain.ChooseVote(found, work.Profile.Knowledge, rng);
         try
         {
-            game.Vote(work.BotId, choice, work.RoundIndex);
+            game.Vote(work.BotId, choice, work.RoundIndex, work.Leg);
         }
         catch (GameException)
         {

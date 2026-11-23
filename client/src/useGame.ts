@@ -100,7 +100,7 @@ export function useGame() {
   }, [])
 
   const enter = useCallback(
-    async (method: 'CreateGame' | 'JoinGame', ...args: string[]) => {
+    async (method: 'CreateGame' | 'JoinGame' | 'StartCampaign', ...args: string[]) => {
       const r = await call<JoinResult>(method, ...args)
       if (r) saveSession({ code: r.code, token: r.token })
     },
@@ -113,6 +113,8 @@ export function useGame() {
     connected,
     clearError: () => setError(null),
     createGame: (name: string) => enter('CreateGame', name),
+    /** Solo match against a campaign level's opponent. Leaves any current game. */
+    startCampaign: (name: string, levelId: string) => enter('StartCampaign', name, levelId),
     /** Solo game: create a room and add one bot straight away. */
     playBot: async (name: string, level: BotLevel) => {
       await enter('CreateGame', name)

@@ -29,6 +29,33 @@ public enum BotLevel
     Hard,
 }
 
+/// <summary>How a bot invents fake names.</summary>
+public enum FakeStyle
+{
+    /// <summary>Silly made-up stems ("Wobblecombe-on-Sea"). Easy to spot.</summary>
+    Obvious,
+
+    /// <summary>Grafts nearby real names onto common endings, with the usual prefixes and suffixes.</summary>
+    Local,
+
+    /// <summary>Copies only the patterns the area itself uses, so the fake blends in.</summary>
+    Crafty,
+}
+
+/// <summary>
+/// How a bot plays. <see cref="Knowledge"/> is the chance it checks the map to find the fake
+/// (otherwise it guesses).
+/// </summary>
+public sealed record BotProfile(double Knowledge, FakeStyle Style)
+{
+    public static BotProfile For(BotLevel level) => level switch
+    {
+        BotLevel.Easy => new(0.2, FakeStyle.Obvious),
+        BotLevel.Hard => new(0.85, FakeStyle.Crafty),
+        _ => new(0.55, FakeStyle.Local),
+    };
+}
+
 public sealed class Player
 {
     public required string Id { get; init; }
@@ -43,6 +70,7 @@ public sealed class Player
     public bool IsBot { get; init; }
 
     public BotLevel? BotLevel { get; init; }
+    public BotProfile? BotProfile { get; init; }
     public bool IsConnected => IsBot || ConnectionId is not null;
     public int Score { get; set; }
 }
@@ -74,22 +102,22 @@ public sealed record PlayerView(
     BotLevel? BotLevel);
 
 /// <summary>Something a bot needs to do. The bot driver polls for these after every change.</summary>
-public abstract record BotWork(string BotId, BotLevel Level)
+public abstract record BotWork(string BotId, BotProfile Profile, int Leg)
 {
     /// <summary>Identifies this piece of work, so it's only started once.</summary>
     public abstract string Key { get; }
 }
 
-public sealed record BotSubmitWork(string BotId, BotLevel Level, MapPreset Map, double MaxSpreadKm)
-    : BotWork(BotId, Level)
+public sealed record BotSubmitWork(string BotId, BotProfile Profile, int Leg, MapPreset Map, double MaxSpreadKm)
+    : BotWork(BotId, Profile, Leg)
 {
-    public override string Key => $"{BotId}:submit";
+    public override string Key => $"{BotId}:submit:{Leg}";
 }
 
-public sealed record BotVoteWork(string BotId, BotLevel Level, int RoundIndex, OptionView[] Options)
-    : BotWork(BotId, Level)
+public sealed record BotVoteWork(string BotId, BotProfile Profile, int Leg, int RoundIndex, OptionView[] Options)
+    : BotWork(BotId, Profile, Leg)
 {
-    public override string Key => $"{BotId}:vote:{RoundIndex}";
+    public override string Key => $"{BotId}:vote:{Leg}:{RoundIndex}";
 }
 
 /// <summary>Only coordinates and labels. The renamed place's original name is not sent until reveal.</summary>
@@ -107,6 +135,16 @@ public sealed record RoundView(
     int? MyVote,
     RevealView? Reveal);
 
+/// <summary>How a campaign match went for the human player. Only present once the match has finished.</summary>
+public sealed record CampaignResult(bool Won, int Stars, int YourScore, int OpponentScore, int FakesSpotted, int TimesFooled);
+
+public sealed record CampaignView(
+    string LevelId,
+    int Number,
+    string Title,
+    string Opponent,
+    CampaignResult? Result);
+
 public sealed record GameView(
     string Code,
     GamePhase Phase,
@@ -115,4 +153,8 @@ public sealed record GameView(
     double MaxSpreadKm,
     MapPreset Map,
     PlayerView[] Players,
-    RoundView? Round);
+    RoundView? Round,
+    // 1-based. A leg is one round for each player; most games are a single leg.
+    int Leg,
+    int Legs,
+    CampaignView? Campaign);

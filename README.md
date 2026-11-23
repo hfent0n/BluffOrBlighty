@@ -15,6 +15,14 @@ renames one of them with a made-up name, and everyone else tries to spot the fak
    sits where a real village really is and looks just like its neighbours. Everyone else votes.
 4. **Scoring**: +1 for spotting the fake, and +1 to the author for each person fooled.
 
+**Campaign:** a single-player ladder of 8 named opponents, from Doris the Parish Newsletter Editor
+to the Cartographer.
+- Each level has its own map and a bot that gets better at spotting fakes and at writing them
+  (obvious → local → crafty).
+- Matches are 3 legs (best of 5 at the end). Winning unlocks the next level.
+- Up to 3 stars: win, win by 2+, spot every fake.
+- Progress is saved in the browser for now.
+
 **Bots:** "Play against a bot" on the home page starts a solo game, and the host can add up to 3
 bots (Easy / Normal / Hard) to any lobby.
 - Bots read place labels from the same vector tiles the map shows (`server/BluffOrBlighty.Api/Bots`).

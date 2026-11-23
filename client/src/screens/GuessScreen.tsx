@@ -1,10 +1,11 @@
+import { MatchBanner } from '../campaign/MatchBanner'
 import { GuessMap } from '../map/GuessMap'
 import { OPTION_LETTERS } from '../map/places'
 import type { GameView } from '../types'
 import type { GameApi } from '../useGame'
 import { PlayerList } from './PlayerList'
 
-export function GuessScreen({ game, api }: { game: GameView; api: GameApi }) {
+export function GuessScreen({ game, api, onQuit }: { game: GameView; api: GameApi; onQuit?: () => void }) {
   const round = game.round!
   const author = game.players.find((p) => p.id === round.authorId)
   const isAuthor = round.authorId === game.meId
@@ -16,6 +17,7 @@ export function GuessScreen({ game, api }: { game: GameView; api: GameApi }) {
     <div className="split">
       <GuessMap options={round.options} reveal={reveal} />
       <aside className="panel">
+        <MatchBanner game={game} api={api} onQuit={onQuit} />
         <p className="muted">
           Round {round.index + 1} of {round.total}
         </p>
@@ -62,7 +64,13 @@ export function GuessScreen({ game, api }: { game: GameView; api: GameApi }) {
 
         {isHost && (
           <button className="primary" onClick={() => api.advance()}>
-            {!reveal ? 'Reveal now' : round.index + 1 < round.total ? 'Next round' : 'Final scores'}
+            {!reveal
+              ? 'Reveal now'
+              : round.index + 1 < round.total
+                ? 'Next round'
+                : game.leg < game.legs
+                  ? `Start leg ${game.leg + 1}`
+                  : 'Final scores'}
           </button>
         )}
       </aside>

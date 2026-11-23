@@ -37,11 +37,18 @@ The game plays differently depending on whether everyone starts in the same plac
 
 ## Bot campaign: levels and saved progress
 
-> **Built so far:** a bot you can play against (home page, "Play against a bot") or add to any
-> lobby. It comes in Easy, Normal and Hard. Bots pick real places from the map tiles, invent fakes
-> from local name parts, and check the map to spot fakes (Hard checks more often).
+> **Built:**
+> - Bots you can play against or add to a lobby (Easy, Normal, Hard).
+> - The campaign: 8 named opponents in `server/BluffOrBlighty.Api/Game/CampaignLevels.cs`, each on
+>   its own map, with 3-leg matches (best of 5 for the last level).
+> - Stars and unlocks.
+> - Progress is saved **in the browser** (`client/src/campaign/progress.ts`, versioned and keyed by
+>   level id).
+>
+> **Still to do:** accounts (Google sign-in + Postgres/Cloud SQL), and uploading browser progress
+> to the account on first sign-in. Also the daily challenge.
 
-Next, turn this into a single-player campaign:
+The original plan:
 
 - **Levels**: a ladder of named bot opponents (e.g. "Parish Councillor" → "County Surveyor" →
   "Ordnance Survey Grandmaster"). Each level sets:

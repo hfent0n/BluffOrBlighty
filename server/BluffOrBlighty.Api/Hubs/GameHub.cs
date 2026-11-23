@@ -13,11 +13,23 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
     private const string CodeKey = "code";
     private const string PlayerKey = "playerId";
 
+    /// <summary>Starts a solo match against a campaign level's opponent.</summary>
+    public async Task<JoinResult> StartCampaign(string playerName, string levelId)
+    {
+        var level = Run(() => CampaignLevels.Get(levelId));
+        var game = games.Create();
+        var result = Run(() => game.AddPlayer(playerName, Context.ConnectionId));
+        Run(() => game.StartCampaign(result.PlayerId, level));
+        await Bind(result);
+        await Broadcast(game);
+        return result;
+    }
+
     public async Task<JoinResult> CreateGame(string playerName)
     {
         var game = games.Create();
         var result = Run(() => game.AddPlayer(playerName, Context.ConnectionId));
-        Bind(result);
+        await Bind(result);
         await Broadcast(game);
         return result;
     }
@@ -26,7 +38,7 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
     {
         var game = Run(() => games.Get(code));
         var result = Run(() => game.AddPlayer(playerName, Context.ConnectionId));
-        Bind(result);
+        await Bind(result);
         await Broadcast(game);
         return result;
     }
@@ -36,7 +48,7 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
     {
         var game = Run(() => games.Get(code));
         var result = Run(() => game.Reconnect(token, Context.ConnectionId));
-        Bind(result);
+        await Bind(result);
         await Broadcast(game);
         return result;
     }
@@ -89,8 +101,16 @@ public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, Bot
         return (Run(() => games.Get((string)code!)), (string)me!);
     }
 
-    private void Bind(JoinResult result)
+    /// <summary>Points this connection at a game, leaving whatever game it was in before.</summary>
+    private async Task Bind(JoinResult result)
     {
+        if (Context.Items.TryGetValue(CodeKey, out var oldCode) && Context.Items.TryGetValue(PlayerKey, out var oldMe) &&
+            (string)oldCode! != result.Code && games.TryGet((string)oldCode!) is { } old)
+        {
+            old.Disconnect((string)oldMe!, Context.ConnectionId);
+            await broadcaster.BroadcastAsync(old);
+        }
+
         Context.Items[CodeKey] = result.Code;
         Context.Items[PlayerKey] = result.PlayerId;
     }

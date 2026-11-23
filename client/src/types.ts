@@ -73,6 +73,38 @@ export interface MapPreset {
   examples: string[]
 }
 
+export interface CampaignResult {
+  won: boolean
+  stars: number
+  yourScore: number
+  opponentScore: number
+  fakesSpotted: number
+  timesFooled: number
+}
+
+export interface CampaignView {
+  levelId: string
+  number: number
+  title: string
+  opponent: string
+  /** Present once the match has finished. */
+  result: CampaignResult | null
+}
+
+/** A rung of the campaign ladder (GET /api/campaign). */
+export interface CampaignLevel {
+  id: string
+  number: number
+  title: string
+  opponent: string
+  blurb: string
+  mapId: string
+  mapName: string
+  /** 1–5 */
+  difficulty: number
+  legs: number
+}
+
 export interface GameView {
   code: string
   phase: GamePhase
@@ -82,4 +114,8 @@ export interface GameView {
   map: MapPreset
   players: PlayerView[]
   round: RoundView | null
+  /** 1-based. A leg is one round for each player. */
+  leg: number
+  legs: number
+  campaign: CampaignView | null
 }

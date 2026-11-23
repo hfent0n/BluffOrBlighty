@@ -70,7 +70,8 @@ public class BotTests
     {
         var rng = new Random(42);
         bool[] found = [true, false, true]; // option 1 is the fake
-        var correct = Enumerable.Range(0, 4000).Count(_ => BotBrain.ChooseVote(found, level, rng) == 1);
+        var knowledge = BotProfile.For(level).Knowledge;
+        var correct = Enumerable.Range(0, 4000).Count(_ => BotBrain.ChooseVote(found, knowledge, rng) == 1);
         Assert.InRange(correct / 4000.0, min, max);
     }
 

@@ -8,18 +8,6 @@ public static class BotBrain
     private static readonly HashSet<string> PickableClasses = ["town", "village", "hamlet"];
 
     /// <summary>
-    /// Chance the bot recognises the fake by checking the map. When it doesn't, it guesses
-    /// at random, so accuracy is roughly p + (1 - p) / 3.
-    /// </summary>
-    public static double Knowledge(BotLevel level) => level switch
-    {
-        BotLevel.Easy => 0.2,
-        BotLevel.Normal => 0.55,
-        BotLevel.Hard => 0.85,
-        _ => 0.5,
-    };
-
-    /// <summary>
     /// Map style layer for a place class, so the guess map draws bot picks like the
     /// surrounding labels. These are the OpenFreeMap "liberty" layer ids; other styles fall back.
     /// </summary>
@@ -32,7 +20,8 @@ public static class BotBrain
 
     /// <summary>Picks 3 nearby real places and renames one. Returns null if this area has too few places.</summary>
     public static SubmissionRequest? ChooseSubmission(
-        IReadOnlyList<TilePlace> places, MapPreset map, double maxSpreadKm, Random rng)
+        IReadOnlyList<TilePlace> places, MapPreset map, double maxSpreadKm, Random rng,
+        FakeStyle style = FakeStyle.Local)
     {
         var candidates = places
             .Where(p => PickableClasses.Contains(p.Class) && MapPresets.Contains(map, p.Lat, p.Lng))
@@ -66,7 +55,8 @@ public static class BotBrain
                 var fake = FakeNames.Generate(
                     nearby: places.Select(p => p.Name),
                     forbidden: places.Select(p => p.Name),
-                    rng);
+                    rng,
+                    style);
 
                 return new SubmissionRequest(
                     [ToPick(real[0]), ToPick(real[1])],
@@ -80,12 +70,14 @@ public static class BotBrain
 
     /// <summary>
     /// Picks which option is fake. <paramref name="foundOnMap"/>[i] says whether option i was
-    /// found among the map's place labels at its location.
+    /// found among the map's place labels at its location. With probability
+    /// <paramref name="knowledge"/> the bot uses that; otherwise it guesses, so accuracy is
+    /// roughly k + (1 - k) / 3.
     /// </summary>
-    public static int ChooseVote(IReadOnlyList<bool> foundOnMap, BotLevel level, Random rng)
+    public static int ChooseVote(IReadOnlyList<bool> foundOnMap, double knowledge, Random rng)
     {
         var count = foundOnMap.Count;
-        if (rng.NextDouble() < Knowledge(level))
+        if (rng.NextDouble() < knowledge)
         {
             var unknown = Enumerable.Range(0, count).Where(i => !foundOnMap[i]).ToArray();
             if (unknown.Length > 0) return unknown[rng.Next(unknown.Length)];

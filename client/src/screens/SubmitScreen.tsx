@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MatchBanner } from '../campaign/MatchBanner'
 import { PickerMap } from '../map/PickerMap'
 import { insideMap, maxSpreadKm } from '../map/places'
 import type { GameView, PlacePick } from '../types'
@@ -7,7 +8,7 @@ import { PlayerList } from './PlayerList'
 
 const PICKS_NEEDED = 3
 
-export function SubmitScreen({ game, api }: { game: GameView; api: GameApi }) {
+export function SubmitScreen({ game, api, onQuit }: { game: GameView; api: GameApi; onQuit?: () => void }) {
   const [picks, setPicks] = useState<PlacePick[]>([])
   const [renameIndex, setRenameIndex] = useState<number | null>(null)
   const [fakeName, setFakeName] = useState('')
@@ -65,6 +66,7 @@ export function SubmitScreen({ game, api }: { game: GameView; api: GameApi }) {
     <div className="split">
       <PickerMap area={game.map} picks={picks} renameIndex={renameIndex} onPick={addPick} />
       <aside className="panel">
+        <MatchBanner game={game} api={api} onQuit={onQuit} />
         {submitted ? (
           <>
             <h2>Submitted ✓</h2>

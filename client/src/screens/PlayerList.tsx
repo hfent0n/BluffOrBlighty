@@ -19,7 +19,7 @@ export function PlayerList({ game, status, showScores, action }: Props) {
           <span>
             {p.name}
             {p.id === game.meId && <span className="tag">you</span>}
-            {p.isBot && <span className="tag bot">bot · {p.botLevel}</span>}
+            {p.isBot && <span className="tag bot">{p.botLevel ? `bot · ${p.botLevel}` : 'bot'}</span>}
             {p.isHost && <span className="tag">host</span>}
             {!p.isConnected && <span className="tag">away</span>}
           </span>
