@@ -85,8 +85,65 @@ public class GameStoreTests
         var stale = (await store.GetAsync(game.Code))!;
         await games.UpdateAsync(game.Code, g => g.AddPlayer("Bob", "c2")); // moves the version on
 
-        stale.Version++;
-        Assert.False(await store.TrySaveAsync(stale, stale.Version - 1));
+        Assert.False(await store.TrySaveAsync(game.Code, stale.Version, stale.Version + 1, stale.Json));
+        Assert.Equal(2, (await games.TryGetAsync(game.Code))!.State.Players.Count);
+    }
+
+    [Fact]
+    public async Task Moves_on_a_game_this_instance_has_cost_one_save_and_no_reads()
+    {
+        var store = new InMemoryGameStore(TimeProvider.System);
+        var games = new GameManager(store, TimeProvider.System);
+        var (game, alice) = await games.CreateAsync(g => g.AddPlayer("Alice", "c1"));
+
+        await games.UpdateAsync(game.Code, g => g.AddPlayer("Bob", "c2"));
+        await games.UpdateAsync(game.Code, g => g.SetMap(alice.PlayerId, "north-norfolk"));
+        await games.UpdateAsync(game.Code, g => g.Start(alice.PlayerId));
+        await games.TryGetAsync(game.Code);
+
+        Assert.Equal(0, store.Reads);
+        Assert.Equal(4, store.Writes); // create + 3 moves
+    }
+
+    [Fact]
+    public async Task Two_instances_on_one_store_keep_every_change()
+    {
+        // Like the old and new versions overlapping during a deploy: each has its own memory.
+        var store = new InMemoryGameStore(TimeProvider.System);
+        var a = new GameManager(store, TimeProvider.System);
+        var b = new GameManager(store, TimeProvider.System);
+        var (game, _) = await a.CreateAsync(g => g.AddPlayer("Host", "c0"));
+
+        await b.UpdateAsync(game.Code, g => g.AddPlayer("Bob", "c1"));   // B loads, saves v2
+        await a.UpdateAsync(game.Code, g => g.AddPlayer("Cat", "c2"));   // A's copy is stale: reload, retry
+        await b.UpdateAsync(game.Code, g => g.AddPlayer("Dee", "c3"));   // and B's is now stale
+
+        await Task.WhenAll(Enumerable.Range(4, 8).Select(i =>
+            Task.Run(() => (i % 2 == 0 ? a : b).UpdateAsync(game.Code, g => g.AddPlayer($"P{i}", $"c{i}")))));
+
+        var names = (await new GameManager(store, TimeProvider.System).TryGetAsync(game.Code))!
+            .State.Players.Select(p => p.Name).ToList();
+        Assert.Equal(12, names.Count);
+        Assert.Contains("Bob", names);
+        Assert.Contains("Cat", names);
+        Assert.Contains("Dee", names);
+    }
+
+    [Fact]
+    public async Task A_move_rejected_part_way_through_leaves_the_game_unchanged()
+    {
+        var games = NewManager();
+        var (game, me) = await games.CreateAsync(g =>
+        {
+            var joined = g.AddPlayer("Alice", "c1");
+            g.StartCampaign(joined.PlayerId, CampaignLevels.Get("newsletter"));
+            return joined;
+        });
+        await games.UpdateAsync(game.Code, g => g.Disconnect(me.PlayerId, "c1")); // Alice is away
+
+        // BackToLobby drops away players before refusing campaign games. The cached copy
+        // must not keep that half-made change.
+        await Assert.ThrowsAsync<GameException>(() => games.UpdateAsync(game.Code, g => g.BackToLobby(me.PlayerId)));
         Assert.Equal(2, (await games.TryGetAsync(game.Code))!.State.Players.Count);
     }
 

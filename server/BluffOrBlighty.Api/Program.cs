@@ -22,6 +22,17 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
 {
     var options = ConfigurationOptions.Parse(redisConnection);
     options.AbortOnConnectFail = false; // keep retrying in the background rather than failing startup
+
+    // Hosted Redis bills per command, so keep the client's background chatter down:
+    // ping idle connections every 2 minutes (default 1), re-check server config every
+    // 10 minutes (default 1), skip CLIENT SETINFO and the tie-breaker GET on connect (there's
+    // only one Redis), and never send CONFIG/CLUSTER (often blocked on hosted Redis anyway).
+    options.KeepAlive = 120;
+    options.ConfigCheckSeconds = 600;
+    options.SetClientLibrary = false;
+    options.TieBreaker = "";
+    options.CommandMap = CommandMap.Create(["CONFIG", "CLUSTER"], available: false);
+
     var redis = await ConnectionMultiplexer.ConnectAsync(options);
     builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
     builder.Services.AddSingleton<IGameStore, RedisGameStore>();
@@ -37,8 +48,9 @@ else
 {
     builder.Services.AddSingleton<InMemoryGameStore>();
     builder.Services.AddSingleton<IGameStore>(sp => sp.GetRequiredService<InMemoryGameStore>());
-    builder.Services.AddHostedService<GameCleanupService>();
 }
+
+builder.Services.AddHostedService<GameCleanupService>();
 
 // Bots read place labels from the same vector tiles the players' map uses.
 builder.Services.AddMemoryCache();

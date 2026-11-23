@@ -53,10 +53,15 @@ Push to `main`. The run summary links to the Cloud Run URL, and the last step ch
 Without Redis, games live in the server's memory, and a deploy or a scale-to-zero ends any game in
 progress. With Redis configured:
 
-- **Game state** is saved to Redis after every move (`game:{code}`, a version and the JSON, expiring
-  after 6 hours idle). Saves are optimistic: a save from an out-of-date copy is rejected and retried,
+- **Game state** is saved to Redis after every move (`bluff:game:{code}`, holding `{version}|{json}`,
+  expiring after 6 hours idle). Saves are optimistic: a save from an out-of-date copy is rejected and retried,
   so two instances can't overwrite each other while a deploy overlaps old and new revisions.
 - **SignalR's Redis backplane** delivers messages to players connected to the other instance.
+- **Light on Redis**, since hosted Redis bills per command (Upstash counts each call inside a script
+  too). Each instance keeps the games it's serving in memory and only reads Redis after a restart or
+  when another instance has saved since. A move is one save, 3 commands. A typical 3-player game
+  measured 68 commands in total (it was 118 before this change), and an idle instance pings about
+  once a minute. Upstash's free 500,000 commands a month is roughly 7,000 such games.
 - **On shutdown** the server doesn't mark its dropped connections as "away"; those players are
   about to reconnect. The client retries for up to 2 minutes, then rejoins with its saved token on
   whichever instance it reaches.
