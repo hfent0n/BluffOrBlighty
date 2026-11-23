@@ -17,7 +17,15 @@ public sealed record MapPreset(
     double Zoom,
     double? RadiusKm,
     string[] Examples,
-    string? Decoy = null);
+    string? Decoy = null,
+    string? Group = null)
+{
+    /// <summary>Where the map is filed on the maps screen: its country for UK maps, or its continent.</summary>
+    public string FilterGroup => Group ?? Country;
+
+    /// <summary>UK maps have no group; maps elsewhere are grouped by continent.</summary>
+    public bool IsUk => Group is null;
+}
 
 public static class MapPresets
 {
@@ -70,6 +78,35 @@ public static class MapPresets
         new("highland-perthshire", "Highland Perthshire", "Near Aberfeldy", "Scotland",
             "Lochs and glens, plus Dull, which is twinned with Boring, Oregon.",
             56.62, -3.9, 10.5, 18, ["Dull", "Aberfeldy", "Kenmore", "Weem"], "Even Duller"),
+
+        // ---- Asia. Example names are real labels from the map tiles. The decoys add
+        // ---- British-style twists ("-under-Edge", "Parva"), so the joke is on British naming.
+        new("cameron-highlands", "Cameron Highlands", "Pahang", "Malaysia",
+            "Tea estates and cool hill towns, with hamlets tucked into every valley.",
+            4.47, 101.38, 12, 10, ["Tanah Rata", "Brinchang", "Ringlet", "Tringkap"], "Brinchang-on-the-Hill", "Asia"),
+        new("kerala-backwaters", "Kerala Backwaters", "Near Alappuzha", "India",
+            "Canals, paddy fields and villages strung along the water.",
+            9.55, 76.40, 11.5, 12, ["Kumarakom", "Kainakary", "Muhamma", "Chennamkary"], "Kumarakom-on-Sea", "Asia"),
+        new("ubud", "Ubud", "Gianyar, Bali", "Indonesia",
+            "Rice terraces and craft villages packed close together.",
+            -8.50, 115.26, 12.5, 8, ["Ubud", "Penestanan", "Petulu", "Peliatan"], "Ubud Parva", "Asia"),
+        new("banaue", "Banaue Terraces", "Ifugao", "Philippines",
+            "Mountain rice terraces and the hamlets that farm them.",
+            16.90, 121.08, 12, 10, ["Banaue", "Poitan", "Amganad", "Bocos"], "Banaue-under-Edge", "Asia"),
+
+        // ---- Africa
+        new("high-atlas", "High Atlas", "Near Imlil", "Morocco",
+            "Mountain villages on the trails up to Toubkal.",
+            31.15, -7.90, 12, 10, ["Imlil", "Aroumd", "Tamatert", "Ikkiss"], "Imlil-on-the-Peak", "Africa"),
+        new("volta-region", "Volta Region", "Near Hohoe", "Ghana",
+            "Green hills, waterfalls and close-knit villages.",
+            7.10, 0.45, 11, 15, ["Hohoe", "Fodome Helu", "Gbi Wegbe", "Kledjo"], "Great Hohoe", "Africa"),
+        new("lake-victoria", "Lake Victoria Shore", "Near Entebbe", "Uganda",
+            "Lakeside villages and fishing landings south of Kampala.",
+            0.10, 32.50, 12, 10, ["Kitubulu", "Nkumba Central", "Bunono", "Kawafu"], "Kitubulu-on-the-Lake", "Africa"),
+        new("zanzibar", "Zanzibar", "Unguja, central", "Tanzania",
+            "Spice farms, forest and villages across the middle of the island.",
+            -6.20, 39.35, 11, 15, ["Chwaka", "Jozani", "Pete", "Uzini"], "Jozani St Mary", "Africa"),
     ];
 
     public static MapPreset Get(string? id) =>

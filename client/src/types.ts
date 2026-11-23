@@ -74,6 +74,11 @@ export interface MapPreset {
   examples: string[]
   /** A made-up name the card slips in among the real ones. */
   decoy: string | null
+  /** Continent for maps outside the UK ("Asia", "Africa"); null for UK maps. */
+  group: string | null
+  /** What the maps screen filters by: the UK country, or the continent. */
+  filterGroup: string
+  isUk: boolean
 }
 
 export interface CampaignResult {

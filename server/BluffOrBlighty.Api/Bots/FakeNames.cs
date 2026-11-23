@@ -57,6 +57,7 @@ public static class FakeNames
             {
                 FakeStyle.Obvious => Obvious(rng),
                 FakeStyle.Crafty => Crafty(names, rng) ?? Local(names, rng),
+                FakeStyle.Splice => Splice(names, rng) ?? Obvious(rng),
                 _ => Local(names, rng),
             };
 
@@ -111,6 +112,56 @@ public static class FakeNames
             : roll < 0.40 && localSuffixes.Count > 0 ? $"{core} {Pick(localSuffixes, rng)}"
             : core;
         return (name, core);
+    }
+
+    /// <summary>
+    /// Joins the start of one local word to the end of another at a vowel/consonant boundary,
+    /// e.g. "Kumarakom" + "Kainakary" → "Kumakary". Returns null if there's too little to work with.
+    /// </summary>
+    private static (string Name, string Core)? Splice(IReadOnlyList<string> nearby, Random rng)
+    {
+        var words = nearby
+            .SelectMany(n => n.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Where(w => w.Length is >= 5 and <= 14 && w.All(char.IsLetter))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (words.Count < 4) return null;
+
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var a = Pick(words, rng);
+            var b = Pick(words, rng);
+            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) continue;
+            var head = a[..CutPoint(a, firstHalf: true)];
+            var tail = b[CutPoint(b, firstHalf: false)..];
+            var core = head + tail.ToLowerInvariant();
+            if (core.Length is < 4 or > 14) continue;
+
+            // Sometimes keep a real second word, as two-word local names do ("Fodome Helu").
+            var multi = nearby.Where(n => n.Contains(' ')).ToList();
+            var name = multi.Count > 0 && rng.NextDouble() < 0.25
+                ? $"{core} {Pick(multi, rng).Split(' ')[^1]}"
+                : core;
+            return (name, core);
+        }
+
+        return null;
+    }
+
+    /// <summary>Index near the middle of the word where a vowel meets a consonant (or the middle).</summary>
+    private static int CutPoint(string word, bool firstHalf)
+    {
+        static bool Vowel(char c) => "aeiouyAEIOUY".Contains(c);
+        var mid = word.Length / 2;
+        for (var d = 0; d <= mid - 1; d++)
+        foreach (var i in new[] { mid + d, mid - d })
+        {
+            if (i < 2 || i > word.Length - 2) continue;
+            // Cut between a vowel and a following consonant, keeping each half pronounceable.
+            if (Vowel(word[i - 1]) && !Vowel(word[i])) return i;
+        }
+
+        return mid;
     }
 
     private static List<string> Stems(IEnumerable<string> nearby) =>

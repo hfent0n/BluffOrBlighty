@@ -54,7 +54,11 @@ export function placeAt(map: MlMap, point: { x: number; y: number }): PlacePick 
     const props = f.properties ?? {}
     if (!PICKABLE_CLASSES.has(props.class)) continue
     if (f.geometry.type !== 'Point') continue
-    const name: string | undefined = props.name_en || props.name
+    // Same name the map shows: the Latin transliteration for names in other scripts,
+    // otherwise the English name, falling back to the local one. (Matches the server's
+    // VectorTilePlaceSource.DisplayName, which bots use.)
+    const name: string | undefined =
+      props['name:nonlatin'] && props['name:latin'] ? props['name:latin'] : props.name_en || props.name
     if (!name) continue
     const [lng, lat] = f.geometry.coordinates
     // Use the label's own point, not the click position, so we can hide it precisely later.

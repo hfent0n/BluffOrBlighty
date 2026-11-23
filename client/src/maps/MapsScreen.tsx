@@ -19,16 +19,16 @@ export function MapsScreen({ selectedId, onSelect, onClose }: Props) {
   const [country, setCountry] = useState(ALL)
 
   const countries = useMemo(
-    () => [ALL, ...new Set((maps ?? []).filter((m) => m.radiusKm !== null).map((m) => m.country))],
+    () => [ALL, ...new Set((maps ?? []).filter((m) => m.radiusKm !== null).map((m) => m.filterGroup))],
     [maps],
   )
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (maps ?? []).filter((m) => {
-      if (country !== ALL && m.country !== country && m.radiusKm !== null) return false
+      if (country !== ALL && m.filterGroup !== country && m.radiusKm !== null) return false
       if (!q) return true
-      return [m.name, m.region, m.description, ...m.examples, m.decoy ?? ''].some((s) =>
+      return [m.name, m.region, m.country, m.description, ...m.examples, m.decoy ?? ''].some((s) =>
         s.toLowerCase().includes(q),
       )
     })
@@ -54,7 +54,7 @@ export function MapsScreen({ selectedId, onSelect, onClose }: Props) {
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Search maps"
         />
-        <div className="chips" role="tablist" aria-label="Filter by country">
+        <div className="chips" role="tablist" aria-label="Filter by country or continent">
           {countries.map((c) => (
             <button
               key={c}
@@ -92,6 +92,7 @@ export function MapsScreen({ selectedId, onSelect, onClose }: Props) {
                   </div>
                   <span className="muted small">
                     {m.region}
+                    {!m.isUk && `, ${m.country}`}
                     {m.radiusKm !== null && ` · ${m.radiusKm} km radius`}
                   </span>
                   <p className="small">{m.description}</p>

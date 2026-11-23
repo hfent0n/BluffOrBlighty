@@ -100,15 +100,23 @@ public sealed class VectorTilePlaceSource(HttpClient http, IMemoryCache cache, I
                 if (f.Geometry is not NetTopologySuite.Geometries.Point p) continue;
                 var cls = f.Attributes.Exists("class") ? f.Attributes["class"] as string : null;
                 if (cls is null || !SettlementClasses.Contains(cls)) continue;
-                // Same name the client's picker uses (name_en, falling back to name).
-                var name = (f.Attributes.Exists("name_en") ? f.Attributes["name_en"] as string : null) is { Length: > 0 } en
-                    ? en
-                    : f.Attributes.Exists("name") ? f.Attributes["name"] as string : null;
+                var name = DisplayName(f.Attributes);
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 result.Add(new TilePlace(name, cls, p.Y, p.X));
             }
 
             return result;
         }
+    }
+
+    /// <summary>
+    /// The Latin-script name the map shows, and the client's picker uses: for names in other
+    /// scripts that's the transliteration (name:latin); otherwise name_en, falling back to name.
+    /// </summary>
+    public static string? DisplayName(NetTopologySuite.Features.IAttributesTable a)
+    {
+        string? Get(string k) => a.Exists(k) ? a[k] as string : null;
+        if (Get("name:nonlatin") is { Length: > 0 } && Get("name:latin") is { Length: > 0 } latin) return latin;
+        return Get("name_en") is { Length: > 0 } en ? en : Get("name");
     }
 }

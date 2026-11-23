@@ -40,6 +40,12 @@ public enum FakeStyle
 
     /// <summary>Copies only the patterns the area itself uses, so the fake blends in.</summary>
     Crafty,
+
+    /// <summary>
+    /// Splices the start of one local name onto the end of another. Works for any language,
+    /// so it's what bots use outside the UK, where English endings would give the fake away.
+    /// </summary>
+    Splice,
 }
 
 /// <summary>

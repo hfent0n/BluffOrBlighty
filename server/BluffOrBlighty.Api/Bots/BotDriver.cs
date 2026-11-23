@@ -74,7 +74,8 @@ public sealed class BotDriver(
     private async Task SubmitAsync(GameSession game, BotSubmitWork work, Random rng)
     {
         // "Anywhere" has no area, so the bot picks somewhere it knows has good names.
-        var presets = MapPresets.All.Where(m => m.RadiusKm is not null).ToList();
+        // ("Anywhere" means anywhere in the UK, so stick to UK areas.)
+        var presets = MapPresets.All.Where(m => m.RadiusKm is not null && m.IsUk).ToList();
         var area = work.Map.RadiusKm is null ? presets[rng.Next(presets.Count)] : work.Map;
 
         for (var attempt = 0; attempt < 5; attempt++)
@@ -84,7 +85,9 @@ public sealed class BotDriver(
             foreach (var tile in TileMath.BlockAround(lat, lng))
                 found.AddRange(await places.PlacesInTileAsync(tile));
 
-            if (BotBrain.ChooseSubmission(found, work.Map, rng, work.MaxSpreadKm, work.Profile.Style) is { } submission)
+            if (BotBrain.ChooseSubmission(found, work.Map, rng, work.MaxSpreadKm,
+                    // English-style fakes would stand out abroad, so splice local names there.
+                    area.IsUk ? work.Profile.Style : FakeStyle.Splice) is { } submission)
             {
                 try
                 {

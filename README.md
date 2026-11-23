@@ -6,8 +6,11 @@ renames one of them with a made-up name, and everyone else tries to spot the fak
 ## How a game works
 
 1. **Lobby**: one player creates a game and shares the 4-letter code. The host picks a map:
-   "Anywhere", or a preset area such as North Norfolk or Swaledale. Players then have to stay
-   inside that area.
+   "Anywhere" in the UK, a UK preset such as North Norfolk or Swaledale, or one of the Asia and
+   Africa presets (e.g. the Kerala backwaters, Banaue, the High Atlas, Zanzibar). Players then have
+   to stay inside that area.
+   - Names in other scripts use the Latin spelling the map shows.
+   - Bots make their fakes abroad by splicing local names together, not with English endings.
 2. **Picking**: everyone at once scrolls the map and clicks **3 real place labels** within
    the map's area, picks one to **rename**, and types a fake name. The host sets how far apart the
    3 places may be with a slider in the lobby: 1–50 km (default 15) or no limit.

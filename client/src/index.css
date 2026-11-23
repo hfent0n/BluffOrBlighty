@@ -508,6 +508,11 @@ button.link {
   width: 100%;
 }
 
+/* Wide outlines (Asia) get more of the card. */
+.thumb.wide {
+  grid-template-columns: 48% minmax(0, 1fr);
+}
+
 .thumb .land {
   fill: var(--land);
   stroke: #9fae96;
