@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/server/">
+    <Project Path="server/BluffOrBlighty.Api/BluffOrBlighty.Api.csproj" />
+    <Project Path="server/BluffOrBlighty.Tests/BluffOrBlighty.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,16 @@
+# Postgres for later (user accounts, game history, OS Open Names gazetteer).
+# The API doesn't use it yet; games are held in memory.
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: bluff
+      POSTGRES_PASSWORD: bluff_dev_password
+      POSTGRES_DB: bluff
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
