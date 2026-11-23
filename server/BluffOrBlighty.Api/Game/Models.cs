@@ -22,6 +22,13 @@ public sealed record JoinResult(string Code, string PlayerId, string Token);
 
 public sealed class GameException(string message) : Exception(message);
 
+public enum BotLevel
+{
+    Easy,
+    Normal,
+    Hard,
+}
+
 public sealed class Player
 {
     public required string Id { get; init; }
@@ -31,7 +38,12 @@ public sealed class Player
 
     public required string Name { get; init; }
     public string? ConnectionId { get; set; }
-    public bool IsConnected => ConnectionId is not null;
+
+    /// <summary>Bots are played by the server and always count as present.</summary>
+    public bool IsBot { get; init; }
+
+    public BotLevel? BotLevel { get; init; }
+    public bool IsConnected => IsBot || ConnectionId is not null;
     public int Score { get; set; }
 }
 
@@ -50,7 +62,35 @@ internal sealed class Round
 // ---- Views sent to clients. Each player gets their own view, so the server
 // ---- never tells anyone which option is fake until the round is revealed.
 
-public sealed record PlayerView(string Id, string Name, int Score, bool IsHost, bool IsConnected, bool HasSubmitted, bool HasVoted);
+public sealed record PlayerView(
+    string Id,
+    string Name,
+    int Score,
+    bool IsHost,
+    bool IsConnected,
+    bool HasSubmitted,
+    bool HasVoted,
+    bool IsBot,
+    BotLevel? BotLevel);
+
+/// <summary>Something a bot needs to do. The bot driver polls for these after every change.</summary>
+public abstract record BotWork(string BotId, BotLevel Level)
+{
+    /// <summary>Identifies this piece of work, so it's only started once.</summary>
+    public abstract string Key { get; }
+}
+
+public sealed record BotSubmitWork(string BotId, BotLevel Level, MapPreset Map, double MaxSpreadKm)
+    : BotWork(BotId, Level)
+{
+    public override string Key => $"{BotId}:submit";
+}
+
+public sealed record BotVoteWork(string BotId, BotLevel Level, int RoundIndex, OptionView[] Options)
+    : BotWork(BotId, Level)
+{
+    public override string Key => $"{BotId}:vote:{RoundIndex}";
+}
 
 /// <summary>Only coordinates and labels. The renamed place's original name is not sent until reveal.</summary>
 public sealed record OptionView(string Label, double Lat, double Lng, string? Layer);

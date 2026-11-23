@@ -109,7 +109,8 @@ export function GuessMap({ options: incoming, reveal }: Props) {
       const isFake = reveal?.fakeIndex === i
       el.className = `option-badge${reveal ? (isFake ? ' fake' : ' real') : ''}`
       el.textContent = isFake ? `${OPTION_LETTERS[i]} · FAKE: ${o.label}` : OPTION_LETTERS[i]
-      return new Marker({ element: el, anchor: 'bottom', offset: [0, -14] }).setLngLat([o.lng, o.lat]).addTo(map)
+      // Sit clear of two-line labels such as "Houghton St Giles".
+      return new Marker({ element: el, anchor: 'bottom', offset: [0, -24] }).setLngLat([o.lng, o.lat]).addTo(map)
     })
     return () => markers.forEach((m) => m.remove())
   }, [ready, options, reveal])

@@ -614,3 +614,28 @@ button.link {
     flex-direction: column;
   }
 }
+
+/* ---- bots ---- */
+
+.bot-row {
+  display: flex;
+  gap: 8px;
+}
+
+.bot-row button {
+  flex: 1;
+}
+
+.bot-row select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.tag.bot {
+  background: color-mix(in srgb, var(--rename) 18%, var(--surface));
+  color: var(--text);
+}

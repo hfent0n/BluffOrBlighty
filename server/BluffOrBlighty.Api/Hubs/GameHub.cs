@@ -1,3 +1,4 @@
+using BluffOrBlighty.Api.Bots;
 using BluffOrBlighty.Api.Game;
 using Microsoft.AspNetCore.SignalR;
 
@@ -7,7 +8,7 @@ namespace BluffOrBlighty.Api.Hubs;
 /// Thin real-time layer over <see cref="GameSession"/>. Every change pushes a
 /// "state" message to each player, holding only what that player is allowed to see.
 /// </summary>
-public sealed class GameHub(GameManager games) : Hub
+public sealed class GameHub(GameManager games, IGameBroadcaster broadcaster, BotDriver bots) : Hub
 {
     private const string CodeKey = "code";
     private const string PlayerKey = "playerId";
@@ -40,6 +41,16 @@ public sealed class GameHub(GameManager games) : Hub
         return result;
     }
 
+    public async Task<string> AddBot(BotLevel level)
+    {
+        var (game, me) = Current();
+        var id = Run(() => game.AddBot(me, level));
+        await Broadcast(game);
+        return id;
+    }
+
+    public Task RemoveBot(string botId) => Act((g, me) => g.RemoveBot(me, botId));
+
     public Task SetMap(string mapId) => Act((g, me) => g.SetMap(me, mapId));
 
     public Task StartGame() => Act((g, me) => g.Start(me));
@@ -66,12 +77,16 @@ public sealed class GameHub(GameManager games) : Hub
 
     private async Task Act(Action<GameSession, string> action)
     {
+        var (game, me) = Current();
+        Run(() => action(game, me));
+        await Broadcast(game);
+    }
+
+    private (GameSession Game, string Me) Current()
+    {
         if (!Context.Items.TryGetValue(CodeKey, out var code) || !Context.Items.TryGetValue(PlayerKey, out var me))
             throw new HubException("Join a game first.");
-
-        var game = Run(() => games.Get((string)code!));
-        Run(() => action(game, (string)me!));
-        await Broadcast(game);
+        return (Run(() => games.Get((string)code!)), (string)me!);
     }
 
     private void Bind(JoinResult result)
@@ -80,9 +95,12 @@ public sealed class GameHub(GameManager games) : Hub
         Context.Items[PlayerKey] = result.PlayerId;
     }
 
-    private Task Broadcast(GameSession game) =>
-        Task.WhenAll(game.ViewsForConnectedPlayers()
-            .Select(x => Clients.Client(x.ConnectionId).SendAsync("state", x.View)));
+    /// <summary>Sends everyone the new state, then lets any bots react to it.</summary>
+    private async Task Broadcast(GameSession game)
+    {
+        await broadcaster.BroadcastAsync(game);
+        bots.Kick(game);
+    }
 
     /// <summary>Turns rule violations into HubExceptions, whose message reaches the client.</summary>
     private static T Run<T>(Func<T> f)

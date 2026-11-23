@@ -77,6 +77,87 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         }
     }
 
+    private static readonly string[] BotNames = ["Botley", "Fibsbury", "Porkington", "Fibbing Magna", "Little Bluffing"];
+
+    public const int MaxBots = 3;
+
+    /// <summary>Host adds a computer player. Returns its player id.</summary>
+    public string AddBot(string playerId, BotLevel level)
+    {
+        lock (_lock)
+        {
+            Touch();
+            RequireHost(playerId);
+            if (Phase != GamePhase.Lobby) throw new GameException("You can only add bots in the lobby.");
+            if (_players.Count >= MaxPlayers) throw new GameException("That game is full.");
+            if (_players.Count(p => p.IsBot) >= MaxBots) throw new GameException($"That's enough bots (max {MaxBots}).");
+
+            var name = BotNames.First(n => _players.All(p => !string.Equals(p.Name, n, StringComparison.OrdinalIgnoreCase)));
+            var bot = new Player
+            {
+                Id = Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),
+                Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant(),
+                Name = name,
+                IsBot = true,
+                BotLevel = level,
+            };
+            _players.Add(bot);
+            return bot.Id;
+        }
+    }
+
+    public void RemoveBot(string playerId, string botId)
+    {
+        lock (_lock)
+        {
+            Touch();
+            RequireHost(playerId);
+            if (Phase != GamePhase.Lobby) throw new GameException("You can only remove bots in the lobby.");
+            if (Find(botId) is not { IsBot: true } bot) throw new GameException("That isn't a bot.");
+            _players.Remove(bot);
+        }
+    }
+
+    /// <summary>Used when a bot can't take part (e.g. the map server is down), so the game doesn't stall.</summary>
+    public void DropBot(string botId)
+    {
+        lock (_lock)
+        {
+            if (Find(botId) is not { IsBot: true } bot) return;
+            if (Phase == GamePhase.Submitting)
+            {
+                _players.Remove(bot);
+                _submissions.Remove(botId);
+                TryStartGuessing();
+            }
+        }
+    }
+
+    /// <summary>What the bots in this game need to do right now.</summary>
+    public List<BotWork> PendingBotWork()
+    {
+        lock (_lock)
+        {
+            var work = new List<BotWork>();
+            foreach (var bot in _players.Where(p => p.IsBot))
+            {
+                var level = bot.BotLevel ?? BotLevel.Normal;
+                if (Phase == GamePhase.Submitting && !_submissions.ContainsKey(bot.Id))
+                {
+                    work.Add(new BotSubmitWork(bot.Id, level, _map, MaxSpreadKm));
+                }
+                else if (CurrentRound() is { Revealed: false } round && round.AuthorId != bot.Id &&
+                         !round.Votes.ContainsKey(bot.Id))
+                {
+                    work.Add(new BotVoteWork(bot.Id, level, _roundIndex,
+                        round.Options.Select(o => new OptionView(o.Label, o.Lat, o.Lng, o.Layer)).ToArray()));
+                }
+            }
+
+            return work;
+        }
+    }
+
     public void SetMap(string playerId, string mapId)
     {
         lock (_lock)
@@ -112,13 +193,15 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
         }
     }
 
-    public void Vote(string playerId, int optionIndex)
+    /// <param name="expectedRound">If set, the vote only counts if that round is still current (used by bots).</param>
+    public void Vote(string playerId, int optionIndex, int? expectedRound = null)
     {
         lock (_lock)
         {
             Touch();
             RequirePlayer(playerId);
             var round = CurrentRound() ?? throw new GameException("There's nothing to vote on.");
+            if (expectedRound is { } r && r != _roundIndex) throw new GameException("That round has finished.");
             if (round.Revealed) throw new GameException("This round has already been revealed.");
             if (round.AuthorId == playerId) throw new GameException("You can't vote on your own places.");
             if (optionIndex < 0 || optionIndex >= round.Options.Length) throw new GameException("Pick one of the options.");
@@ -303,7 +386,9 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             p.Id == _hostId,
             p.IsConnected,
             _submissions.ContainsKey(p.Id),
-            round?.Votes.ContainsKey(p.Id) ?? false)).ToArray();
+            round?.Votes.ContainsKey(p.Id) ?? false,
+            p.IsBot,
+            p.BotLevel)).ToArray();
 
         return new GameView(Code, Phase, meId, _hostId, MaxSpreadKm, _map, players, roundView);
     }

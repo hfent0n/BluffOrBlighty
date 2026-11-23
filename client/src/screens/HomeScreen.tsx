@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { BOT_LEVELS, type BotLevel } from '../types'
 import type { GameApi } from '../useGame'
 
 export function HomeScreen({ api }: { api: GameApi }) {
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
+  const [level, setLevel] = useState<BotLevel>('Normal')
   const canGo = name.trim().length > 0 && api.connected
 
   return (
@@ -21,6 +23,17 @@ export function HomeScreen({ api }: { api: GameApi }) {
       <button className="primary" disabled={!canGo} onClick={() => api.createGame(name)}>
         Create a game
       </button>
+
+      <div className="bot-row">
+        <button disabled={!canGo} onClick={() => api.playBot(name, level)}>
+          Play against a bot
+        </button>
+        <select value={level} onChange={(e) => setLevel(e.target.value as BotLevel)} aria-label="Bot difficulty">
+          {BOT_LEVELS.map((l) => (
+            <option key={l}>{l}</option>
+          ))}
+        </select>
+      </div>
 
       <div className="divider">or join one</div>
 

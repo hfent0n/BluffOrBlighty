@@ -2,6 +2,9 @@
 
 export type GamePhase = 'Lobby' | 'Submitting' | 'Guessing' | 'Finished'
 
+export type BotLevel = 'Easy' | 'Normal' | 'Hard'
+export const BOT_LEVELS: BotLevel[] = ['Easy', 'Normal', 'Hard']
+
 export interface PlacePick {
   name: string
   lat: number
@@ -30,6 +33,8 @@ export interface PlayerView {
   isConnected: boolean
   hasSubmitted: boolean
   hasVoted: boolean
+  isBot: boolean
+  botLevel: BotLevel | null
 }
 
 export interface OptionView {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MapsScreen, SelectedMapCard } from '../maps/MapsScreen'
-import type { GameView } from '../types'
+import { BOT_LEVELS, type BotLevel, type GameView } from '../types'
 import type { GameApi } from '../useGame'
 import { PlayerList } from './PlayerList'
 
@@ -8,6 +8,8 @@ export function LobbyScreen({ game, api }: { game: GameView; api: GameApi }) {
   const isHost = game.meId === game.hostId
   const connectedCount = game.players.filter((p) => p.isConnected).length
   const [browsing, setBrowsing] = useState(false)
+  const [level, setLevel] = useState<BotLevel>('Normal')
+  const botCount = game.players.filter((p) => p.isBot).length
 
   if (browsing) {
     return (
@@ -37,7 +39,26 @@ export function LobbyScreen({ game, api }: { game: GameView; api: GameApi }) {
         onChange={() => setBrowsing(true)}
         changeLabel={isHost ? 'Change map' : 'Browse maps'}
       />
-      <PlayerList game={game} />
+      <PlayerList
+        game={game}
+        action={(p) =>
+          isHost && p.isBot ? (
+            <button className="link" onClick={() => api.removeBot(p.id)} aria-label={`Remove ${p.name}`}>
+              ✕
+            </button>
+          ) : null
+        }
+      />
+      {isHost && botCount < 3 && (
+        <div className="bot-row">
+          <button onClick={() => api.addBot(level)}>Add a bot</button>
+          <select value={level} onChange={(e) => setLevel(e.target.value as BotLevel)} aria-label="Bot difficulty">
+            {BOT_LEVELS.map((l) => (
+              <option key={l}>{l}</option>
+            ))}
+          </select>
+        </div>
+      )}
       {isHost ? (
         <button className="primary" disabled={connectedCount < 2} onClick={() => api.startGame()}>
           {connectedCount < 2 ? 'Waiting for players…' : 'Start game'}

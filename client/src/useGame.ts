@@ -1,6 +1,6 @@
 import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GameView, JoinResult, SubmissionRequest } from './types'
+import type { BotLevel, GameView, JoinResult, SubmissionRequest } from './types'
 
 const SESSION_KEY = 'bluff-or-blighty.session'
 
@@ -113,6 +113,13 @@ export function useGame() {
     connected,
     clearError: () => setError(null),
     createGame: (name: string) => enter('CreateGame', name),
+    /** Solo game: create a room and add one bot straight away. */
+    playBot: async (name: string, level: BotLevel) => {
+      await enter('CreateGame', name)
+      await call('AddBot', level)
+    },
+    addBot: (level: BotLevel) => call('AddBot', level),
+    removeBot: (botId: string) => call('RemoveBot', botId),
     joinGame: (code: string, name: string) => enter('JoinGame', code, name),
     setMap: (mapId: string) => call('SetMap', mapId),
     startGame: () => call('StartGame'),

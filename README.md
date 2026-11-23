@@ -15,6 +15,12 @@ renames one of them with a made-up name, and everyone else tries to spot the fak
    sits where a real village really is and looks just like its neighbours. Everyone else votes.
 4. **Scoring**: +1 for spotting the fake, and +1 to the author for each person fooled.
 
+**Bots:** "Play against a bot" on the home page starts a solo game, and the host can add up to 3
+bots (Easy / Normal / Hard) to any lobby.
+- Bots read place labels from the same vector tiles the map shows (`server/BluffOrBlighty.Api/Bots`).
+- They pick 3 real places, rename one with a made-up name built from local name parts, and vote.
+- To vote, they check whether each option exists on the map. Harder bots check more often.
+
 ## Stack
 
 | Part | Tech |
@@ -78,6 +84,7 @@ server/BluffOrBlighty.Api/
   Game/GameSession.cs all game rules (phases, validation, scoring, per-player views)
   Game/GameManager.cs in-memory game store + idle cleanup
   Game/MapPresets.cs  preset map areas (also served at /api/maps)
+  Bots/               tile place source, fake-name generator, bot decisions, bot driver
   Hubs/GameHub.cs     thin SignalR layer; pushes a "state" view to each player
 ```
 
