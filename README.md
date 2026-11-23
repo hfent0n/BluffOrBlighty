@@ -3,6 +3,59 @@
 A party game about silly British place names. Each player finds real places on the map,
 renames one of them with a made-up name, and everyone else tries to spot the fake.
 
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/home.jpg" alt="Home screen: create a game, start the campaign, play a bot or join with a code"><br>
+      <b>Home.</b> Create a game, start the campaign, play a bot, or join with a code.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/lobby.jpg" alt="Lobby with the chosen map, the distance slider, and a Hard bot"><br>
+      <b>Lobby.</b> The chosen map, a slider for how far apart picks may be, and bots (Easy, Normal, Hard).
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <img src="docs/screenshots/maps.jpg" alt="Maps screen: preset areas with three real names and one fake under a magnifying glass"><br>
+      <b>Maps.</b> Preset areas to play in. Each card shows three real place names, with a made-up one under the magnifying glass.
+    </td>
+    <td valign="top">
+      <img src="docs/screenshots/world-maps.jpg" alt="Asia maps: Cameron Highlands, Kerala Backwaters, Ubud, Banaue"><br>
+      <b>Beyond the UK.</b> Asia and Africa maps, drawn on continent outlines.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <img src="docs/screenshots/picking.jpg" alt="Picking three real labels on the map and renaming Little Snoring to Muddle Snoring"><br>
+      <b>Pick your places.</b> Click three real labels on the map, then rename one with your fake.
+    </td>
+    <td valign="top">
+      <img src="docs/screenshots/guessing.jpg" alt="Guessing round: three options drawn in the map's own label style"><br>
+      <b>Spot the fake.</b> All three options are drawn in the map's own label style, so the fake sits where a real village is.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <img src="docs/screenshots/reveal.jpg" alt="Reveal: the fake Guning was really Norton Corner"><br>
+      <b>Reveal.</b> The fake flips back to the real name, and you see who picked what.
+    </td>
+    <td valign="top">
+      <img src="docs/screenshots/campaign.jpg" alt="Campaign ladder: eight opponents, stars and locked levels"><br>
+      <b>Campaign.</b> Eight local experts, each on their own map, unlocked one by one.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <img src="docs/screenshots/campaign-match.jpg" alt="Campaign match against Reg on Wallop Country, with the play area circle"><br>
+      <b>Campaign match.</b> Three legs against the level's bot, staying inside the map's dashed play area.
+    </td>
+    <td valign="top">
+      <img src="docs/screenshots/campaign-result.jpg" alt="Result: You beat Doris, three stars"><br>
+      <b>Stars.</b> Win, win by 2 or more, and spot every fake for three stars.
+    </td>
+  </tr>
+</table>
+
 ## How a game works
 
 1. **Lobby**: one player creates a game and shares the 4-letter code. The host picks a map:
