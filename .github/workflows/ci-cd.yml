@@ -112,31 +112,10 @@ jobs:
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      # Optional features, switched on by repository variables (see docs/DEPLOYMENT.md):
-      # - REDIS_SECRET: games live in Redis and survive deploys.
-      # - DB_SECRET: accounts and saved progress, in Postgres.
-      # - GOOGLE_CLIENT_ID: "Sign in with Google" (needs DB_SECRET).
-      # Secrets come from Secret Manager; gcloud takes them as one comma-separated flag.
-      - name: Optional settings
-        id: optional
-        env:
-          REDIS_SECRET: ${{ vars.REDIS_SECRET }}
-          DB_SECRET: ${{ vars.DB_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
-        run: |
-          secrets=()
-          [ -n "$REDIS_SECRET" ] && secrets+=("Redis__ConnectionString=${REDIS_SECRET}:latest")
-          [ -n "$DB_SECRET" ] && secrets+=("ConnectionStrings__Database=${DB_SECRET}:latest")
-          flags=""
-          [ ${#secrets[@]} -gt 0 ] && flags="--set-secrets=$(IFS=,; echo "${secrets[*]}")"
-          [ -n "$GOOGLE_CLIENT_ID" ] && flags="$flags --set-env-vars=Auth__GoogleClientId=${GOOGLE_CLIENT_ID}"
-          echo "flags=$flags" >> "$GITHUB_OUTPUT"
-          echo "store=$([ -n "$REDIS_SECRET" ] && echo redis || echo memory)" >> "$GITHUB_OUTPUT"
-          echo "accounts=$([ -n "$DB_SECRET" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-
-      # Without Redis, games are in memory and a deploy ends them; with it, players reconnect to
-      # the new revision and rejoin. A long request timeout keeps SignalR WebSockets open. (With
-      # Redis, --max-instances can be raised; the Redis backplane links the instances.)
+      # With the REDIS_SECRET variable set, games live in Redis and survive deploys: players
+      # reconnect to the new revision and rejoin. Without it, games are in memory and a deploy
+      # ends them. A long request timeout keeps SignalR WebSockets open. (With Redis,
+      # --max-instances can be raised; the Redis backplane links the instances.)
       - name: Deploy
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -154,15 +133,13 @@ jobs:
             --timeout=3600
             --cpu=1
             --memory=512Mi
-            ${{ steps.optional.outputs.flags }}
+            ${{ vars.REDIS_SECRET && format('--set-secrets=Redis__ConnectionString={0}:latest', vars.REDIS_SECRET) || '' }}
 
       - name: Smoke test
         env:
-          EXPECT_STORE: ${{ steps.optional.outputs.store }}
-          EXPECT_ACCOUNTS: ${{ steps.optional.outputs.accounts }}
+          EXPECT_STORE: ${{ vars.REDIS_SECRET && 'redis' || 'memory' }}
         run: |
           health=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 "${{ steps.deploy.outputs.url }}/api/health")
           echo "$health"
-          # Catch a misconfigured secret: the app would quietly fall back to in-memory games or no accounts.
+          # Catch a misconfigured secret: the app would quietly fall back to in-memory games.
           echo "$health" | grep -q "\"store\":\"$EXPECT_STORE\"" || { echo "::error::Expected store '$EXPECT_STORE'"; exit 1; }
-          echo "$health" | grep -q "\"accounts\":$EXPECT_ACCOUNTS" || { echo "::error::Expected accounts=$EXPECT_ACCOUNTS"; exit 1; }

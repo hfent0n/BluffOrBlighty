@@ -990,35 +990,3 @@ button.link {
   display: flex;
   justify-content: space-between;
 }
-
-/* ---- accounts ---- */
-
-.account-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 14px;
-}
-
-.account-bar.signed-out {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.account-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.google-button {
-  min-height: 40px;
-}
-
-.saved-where {
-  margin-top: 6px;
-}

@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useAccount } from './account/useAccount'
 import { CampaignScreen } from './campaign/CampaignScreen'
 import { recordResult } from './campaign/progress'
 import { FinishedScreen } from './screens/FinishedScreen'
@@ -24,7 +23,6 @@ type Menu = 'home' | 'campaign'
 
 export default function App() {
   const api = useGame()
-  const account = useAccount()
   const { game, error } = api
   const [name, setName] = useState(loadName)
   const [menu, setMenu] = useState<Menu>('home')
@@ -40,12 +38,7 @@ export default function App() {
   // Save campaign results as soon as a match finishes.
   const result = game?.phase === 'Finished' ? game.campaign?.result : null
   useEffect(() => {
-    if (game?.campaign && result) {
-      recordResult(game.code, game.campaign.levelId, result)
-      // Signed in: the server saved it to the account; fetch the updated progress.
-      void account.refresh()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (game?.campaign && result) recordResult(game.code, game.campaign.levelId, result)
   }, [game?.code, game?.campaign, result])
 
   const showCampaign = () => setMenu('campaign')
@@ -61,20 +54,11 @@ export default function App() {
         menu === 'campaign' ? (
           <CampaignScreen
             playerName={name}
-            progress={account.campaignProgress()}
-            signedIn={!!account.me}
-            accountsEnabled={account.enabled}
             onPlay={(level) => api.startCampaign(name, level.id)}
             onBack={() => setMenu('home')}
           />
         ) : (
-          <HomeScreen
-            api={api}
-            account={account}
-            name={name}
-            onNameChange={setName}
-            onCampaign={showCampaign}
-          />
+          <HomeScreen api={api} name={name} onNameChange={setName} onCampaign={showCampaign} />
         )
       ) : game.phase === 'Lobby' ? (
         <LobbyScreen game={game} api={api} />

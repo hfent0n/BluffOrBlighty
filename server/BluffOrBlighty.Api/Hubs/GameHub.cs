@@ -1,4 +1,3 @@
-using BluffOrBlighty.Api.Accounts;
 using BluffOrBlighty.Api.Bots;
 using BluffOrBlighty.Api.Game;
 using Microsoft.AspNetCore.SignalR;
@@ -14,14 +13,10 @@ public sealed class GameHub(
     GameManager games,
     IGameBroadcaster broadcaster,
     BotDriver bots,
-    IResultRecorder results,
     IHostApplicationLifetime lifetime) : Hub
 {
     private const string CodeKey = "code";
     private const string PlayerKey = "playerId";
-
-    /// <summary>The signed-in account on this connection, if any (from the session cookie).</summary>
-    private string? UserId => Context.User?.CurrentUserId();
 
     /// <summary>Starts a solo match against a campaign level's opponent.</summary>
     public async Task<JoinResult> StartCampaign(string playerName, string levelId)
@@ -29,7 +24,7 @@ public sealed class GameHub(
         var level = Run(() => CampaignLevels.Get(levelId));
         var (game, result) = await Run(() => games.CreateAsync(g =>
         {
-            var joined = g.AddPlayer(playerName, Context.ConnectionId, UserId);
+            var joined = g.AddPlayer(playerName, Context.ConnectionId);
             g.StartCampaign(joined.PlayerId, level);
             return joined;
         }));
@@ -40,7 +35,7 @@ public sealed class GameHub(
 
     public async Task<JoinResult> CreateGame(string playerName)
     {
-        var (game, result) = await Run(() => games.CreateAsync(g => g.AddPlayer(playerName, Context.ConnectionId, UserId)));
+        var (game, result) = await Run(() => games.CreateAsync(g => g.AddPlayer(playerName, Context.ConnectionId)));
         await Bind(result);
         await Broadcast(game);
         return result;
@@ -48,7 +43,7 @@ public sealed class GameHub(
 
     public async Task<JoinResult> JoinGame(string code, string playerName)
     {
-        var (game, result) = await Run(() => games.UpdateAsync(code, g => g.AddPlayer(playerName, Context.ConnectionId, UserId)));
+        var (game, result) = await Run(() => games.UpdateAsync(code, g => g.AddPlayer(playerName, Context.ConnectionId)));
         await Bind(result);
         await Broadcast(game);
         return result;
@@ -60,7 +55,7 @@ public sealed class GameHub(
     /// </summary>
     public async Task<JoinResult> Rejoin(string code, string token)
     {
-        var (game, result) = await Run(() => games.UpdateAsync(code, g => g.Reconnect(token, Context.ConnectionId, UserId)));
+        var (game, result) = await Run(() => games.UpdateAsync(code, g => g.Reconnect(token, Context.ConnectionId)));
         await Bind(result);
         await Broadcast(game);
         return result;
@@ -117,25 +112,6 @@ public sealed class GameHub(
         var (code, me) = Current();
         var game = await Run(() => games.UpdateAsync(code, g => action(g, me)));
         await Broadcast(game);
-        await SaveResultsIfFinished(game);
-    }
-
-    /// <summary>
-    /// When a game has just finished, save it to signed-in players' accounts. The claim is a
-    /// versioned save, so only one server records it even if two notice at once.
-    /// </summary>
-    private async Task SaveResultsIfFinished(GameSession game)
-    {
-        if (!results.Enabled || game.Phase != GamePhase.Finished || game.State.ResultsRecorded) return;
-        try
-        {
-            var (_, claimed) = await games.UpdateAsync(game.Code, g => g.ClaimResults());
-            if (claimed is { Count: > 0 }) await results.RecordAsync(claimed);
-        }
-        catch (GameException)
-        {
-            // The game expired in between; nothing to save.
-        }
     }
 
     private (string Code, string Me) Current()

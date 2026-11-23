@@ -74,9 +74,6 @@ public sealed class Player
     public required string Name { get; init; }
     public string? ConnectionId { get; set; }
 
-    /// <summary>The signed-in account playing as this player, if any. Never sent to other players.</summary>
-    public string? UserId { get; set; }
-
     /// <summary>Bots are played by the server and always count as present.</summary>
     public bool IsBot { get; init; }
 
@@ -148,18 +145,6 @@ public sealed record RoundView(
     OptionView[] Options,
     int? MyVote,
     RevealView? Reveal);
-
-/// <summary>A finished game from one signed-in player's point of view, for saving to their account.</summary>
-public sealed record PlayerResult(
-    string UserId,
-    string GameCode,
-    string MapId,
-    string? CampaignLevelId,
-    int Players,
-    int Score,
-    int Rank,
-    bool Won,
-    CampaignResult? Campaign);
 
 /// <summary>How a campaign match went for the human player. Only present once the match has finished.</summary>
 public sealed record CampaignResult(bool Won, int Stars, int YourScore, int OpponentScore, int FakesSpotted, int TimesFooled);

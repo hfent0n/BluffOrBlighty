@@ -50,7 +50,6 @@ function cleanError(e: unknown): string {
 
 export function useGame() {
   const connRef = useRef<HubConnection | null>(null)
-  const rejoinRef = useRef<() => Promise<void>>(async () => {})
   const [game, setGame] = useState<GameView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
@@ -76,7 +75,6 @@ export function useGame() {
         setGame(null)
       }
     }
-    rejoinRef.current = rejoin
 
     conn.onreconnecting(() => setConnected(false))
     conn.onreconnected(async () => {
@@ -151,22 +149,6 @@ export function useGame() {
     vote: (optionIndex: number) => call('Vote', optionIndex),
     advance: () => call('Advance'),
     backToLobby: () => call('BackToLobby'),
-    /**
-     * Reconnects (and rejoins any game in progress). Needed after signing in or out: the server
-     * reads who you are from the session cookie when the connection starts.
-     */
-    restart: async () => {
-      const conn = connRef.current
-      if (!conn) return
-      try {
-        await conn.stop()
-        await conn.start()
-        setConnected(true)
-        await rejoinRef.current()
-      } catch (e) {
-        setError(cleanError(e))
-      }
-    },
     leave: () => {
       saveSession(null)
       setGame(null)

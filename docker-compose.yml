@@ -1,9 +1,8 @@
 # Local services. Redis: game state (optional locally; without it games are kept in memory).
-# Postgres: accounts and saved progress. Run the API with
-#   ConnectionStrings__Database="Host=localhost;Database=bluff;Username=bluff;Password=bluff_dev_password"
+# Postgres: for later (user accounts, game history). The API doesn't use it yet.
 services:
   db:
-    image: postgres:17-alpine
+    image: postgis/postgis:17-3.5
     environment:
       POSTGRES_USER: bluff
       POSTGRES_PASSWORD: bluff_dev_password

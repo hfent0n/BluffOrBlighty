@@ -54,7 +54,7 @@ public sealed class GameSession
     private MapPreset Map => MapPresets.Get(_s.MapId);
     private CampaignLevel? Campaign => _s.CampaignLevelId is { } id ? CampaignLevels.Get(id) : null;
 
-    public JoinResult AddPlayer(string name, string connectionId, string? userId = null)
+    public JoinResult AddPlayer(string name, string connectionId)
     {
         lock (_lock)
         {
@@ -73,7 +73,6 @@ public sealed class GameSession
                 Token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant(),
                 Name = cleanName,
                 ConnectionId = connectionId,
-                UserId = userId,
             };
             _s.Players.Add(player);
             if (_s.Players.Count == 1) _s.HostId = player.Id;
@@ -81,9 +80,7 @@ public sealed class GameSession
         }
     }
 
-    /// <param name="userId">The account now signed in on this connection, if any. Signing in
-    /// mid-game links the player to the account, so the result is saved to it.</param>
-    public JoinResult Reconnect(string token, string connectionId, string? userId = null)
+    public JoinResult Reconnect(string token, string connectionId)
     {
         lock (_lock)
         {
@@ -91,7 +88,6 @@ public sealed class GameSession
             var player = _s.Players.FirstOrDefault(p => p.Token == token)
                          ?? throw new GameException("Couldn't find you in that game.");
             player.ConnectionId = connectionId;
-            if (userId is not null) player.UserId = userId;
             return new JoinResult(Code, player.Id, player.Token);
         }
     }
@@ -339,36 +335,7 @@ public sealed class GameSession
             _s.Leg = 1;
             _s.Spotted.Clear();
             _s.Fooled.Clear();
-            _s.ResultsRecorded = false;
             Phase = GamePhase.Lobby;
-        }
-    }
-
-    /// <summary>
-    /// For a finished game whose results haven't been saved yet: marks them as saved and returns
-    /// one result per signed-in player. Returns null otherwise, so results are saved once even
-    /// if several servers notice the game finishing (the claim is part of a versioned save).
-    /// </summary>
-    public List<PlayerResult>? ClaimResults()
-    {
-        lock (_lock)
-        {
-            if (Phase != GamePhase.Finished || _s.ResultsRecorded) return null;
-            _s.ResultsRecorded = true;
-
-            var players = _s.Players.Count;
-            var top = _s.Players.Count == 0 ? 0 : _s.Players.Max(p => p.Score);
-            return _s.Players
-                .Where(p => p.UserId is not null && !p.IsBot)
-                .Select(p =>
-                {
-                    var campaign = BuildCampaignView(p.Id)?.Result;
-                    var rank = 1 + _s.Players.Count(o => o.Score > p.Score);
-                    return new PlayerResult(
-                        p.UserId!, Code, _s.MapId, _s.CampaignLevelId, players, p.Score, rank,
-                        campaign?.Won ?? p.Score == top, campaign);
-                })
-                .ToList();
         }
     }
 
