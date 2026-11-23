@@ -1,8 +1,12 @@
 # Future ideas
 
-Ideas for later. Nothing here is built yet.
+Ideas for later. Sections marked **Built** are done; the rest is not built yet.
 
 ## Preset maps
+
+> **Built:** the host picks from a maps screen in the lobby. Presets live in
+> `server/BluffOrBlighty.Api/Game/MapPresets.cs`, and picks are limited to the preset's radius.
+> Still to do: saved and shared community maps.
 
 Let the host pick a starting area from a list, so a game doesn't begin with everyone scrolling around the whole country.
 

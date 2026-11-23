@@ -19,6 +19,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
     private readonly List<Round> _rounds = [];
     private int _roundIndex;
     private string _hostId = "";
+    private MapPreset _map = MapPresets.Anywhere;
 
     public string Code { get; } = code;
     public GamePhase Phase { get; private set; } = GamePhase.Lobby;
@@ -73,6 +74,17 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             // Don't let an absent player stall the game.
             if (Phase == GamePhase.Submitting) TryStartGuessing();
             else if (Phase == GamePhase.Guessing) TryAutoReveal();
+        }
+    }
+
+    public void SetMap(string playerId, string mapId)
+    {
+        lock (_lock)
+        {
+            Touch();
+            RequireHost(playerId);
+            if (Phase != GamePhase.Lobby) throw new GameException("You can only change the map in the lobby.");
+            _map = MapPresets.Get(mapId);
         }
     }
 
@@ -187,6 +199,9 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
                 throw new GameException("One of the places has an invalid location.");
         }
 
+        if (picks.Any(p => !MapPresets.Contains(_map, p.Lat, p.Lng)))
+            throw new GameException($"All your places need to be inside the play area for {_map.Name}.");
+
         for (var i = 0; i < picks.Length; i++)
         for (var j = i + 1; j < picks.Length; j++)
         {
@@ -290,7 +305,7 @@ public sealed class GameSession(string code, Random random, TimeProvider time)
             _submissions.ContainsKey(p.Id),
             round?.Votes.ContainsKey(p.Id) ?? false)).ToArray();
 
-        return new GameView(Code, Phase, meId, _hostId, MaxSpreadKm, players, roundView);
+        return new GameView(Code, Phase, meId, _hostId, MaxSpreadKm, _map, players, roundView);
     }
 
     private static string CleanName(string? name, string field)

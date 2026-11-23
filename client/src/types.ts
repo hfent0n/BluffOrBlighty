@@ -54,12 +54,27 @@ export interface RoundView {
   reveal: RevealView | null
 }
 
+export interface MapPreset {
+  id: string
+  name: string
+  region: string
+  country: string
+  description: string
+  lat: number
+  lng: number
+  zoom: number
+  /** null = anywhere */
+  radiusKm: number | null
+  examples: string[]
+}
+
 export interface GameView {
   code: string
   phase: GamePhase
   meId: string
   hostId: string
   maxSpreadKm: number
+  map: MapPreset
   players: PlayerView[]
   round: RoundView | null
 }

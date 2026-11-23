@@ -114,6 +114,7 @@ export function useGame() {
     clearError: () => setError(null),
     createGame: (name: string) => enter('CreateGame', name),
     joinGame: (code: string, name: string) => enter('JoinGame', code, name),
+    setMap: (mapId: string) => call('SetMap', mapId),
     startGame: () => call('StartGame'),
     submit: (s: SubmissionRequest) => call('Submit', s),
     vote: (optionIndex: number) => call('Vote', optionIndex),

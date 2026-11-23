@@ -173,3 +173,63 @@ public class GameSessionTests
         Assert.All(view.Players, p => Assert.Equal(0, p.Score));
     }
 }
+
+public class MapPresetTests
+{
+    private static readonly PlacePick GreatSnoring = new("Great Snoring", 52.8706, 0.8836);
+    private static readonly PlacePick LittleSnoring = new("Little Snoring", 52.8613, 0.9093);
+    private static readonly PlacePick Thursford = new("Thursford", 52.8598, 0.9449);
+
+    private static (GameSession Game, JoinResult Host, JoinResult Guest) Lobby()
+    {
+        var game = new GameSession("TEST", new Random(1), TimeProvider.System);
+        return (game, game.AddPlayer("Alice", "c1"), game.AddPlayer("Bob", "c2"));
+    }
+
+    [Fact]
+    public void Defaults_to_anywhere_and_host_can_change_map()
+    {
+        var (game, host, guest) = Lobby();
+        Assert.Equal(MapPresets.AnywhereId, game.ViewFor(host.PlayerId).Map.Id);
+
+        Assert.Throws<GameException>(() => game.SetMap(guest.PlayerId, "north-norfolk"));
+        Assert.Throws<GameException>(() => game.SetMap(host.PlayerId, "atlantis"));
+        game.SetMap(host.PlayerId, "north-norfolk");
+        Assert.Equal("north-norfolk", game.ViewFor(guest.PlayerId).Map.Id);
+    }
+
+    [Fact]
+    public void Picks_inside_the_map_are_accepted()
+    {
+        var (game, host, _) = Lobby();
+        game.SetMap(host.PlayerId, "north-norfolk");
+        game.Start(host.PlayerId);
+        game.Submit(host.PlayerId, new SubmissionRequest([GreatSnoring, LittleSnoring], Thursford, "Muddle Snoring"));
+    }
+
+    [Fact]
+    public void Picks_outside_the_map_are_rejected()
+    {
+        var (game, host, _) = Lobby();
+        game.SetMap(host.PlayerId, "the-wallops");
+        game.Start(host.PlayerId);
+        var ex = Assert.Throws<GameException>(() =>
+            game.Submit(host.PlayerId, new SubmissionRequest([GreatSnoring, LittleSnoring], Thursford, "Muddle Snoring")));
+        Assert.Contains("Wallop Country", ex.Message);
+    }
+
+    [Fact]
+    public void Map_cannot_change_after_start()
+    {
+        var (game, host, _) = Lobby();
+        game.Start(host.PlayerId);
+        Assert.Throws<GameException>(() => game.SetMap(host.PlayerId, "north-norfolk"));
+    }
+
+    [Fact]
+    public void Preset_ids_are_unique_and_examples_sit_inside_radius_sanity()
+    {
+        Assert.Equal(MapPresets.All.Count, MapPresets.All.Select(m => m.Id).Distinct().Count());
+        Assert.All(MapPresets.All.Where(m => m.RadiusKm is not null), m => Assert.InRange(m.RadiusKm!.Value, 5, 40));
+    }
+}

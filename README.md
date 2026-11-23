@@ -5,9 +5,11 @@ renames one of them with a made-up name, and everyone else tries to spot the fak
 
 ## How a game works
 
-1. **Lobby**: one player creates a game and shares the 4-letter code.
+1. **Lobby**: one player creates a game and shares the 4-letter code. The host picks a map:
+   "Anywhere", or a preset area such as North Norfolk or Swaledale. Players then have to stay
+   inside that area.
 2. **Picking**: everyone at once scrolls the map and clicks **3 real place labels** within
-   15 km of each other, picks one to **rename**, and types a fake name.
+   the map's area and within 15 km of each other, picks one to **rename**, and types a fake name.
 3. **Guessing**: one round per player. The map zooms out to their 3 places. The base map's
    own labels there are hidden and replaced with game labels in the same style, so the fake
    sits where a real village really is and looks just like its neighbours. Everyone else votes.
@@ -70,10 +72,12 @@ client/src/
   map/places.ts       label picking, hiding, overlay helpers
   map/PickerMap.tsx   submit-phase map
   map/GuessMap.tsx    guessing-phase map
+  maps/               maps browser, card artwork (UK outline from Natural Earth)
   screens/            Home, Lobby, Submit, Guess, Finished
 server/BluffOrBlighty.Api/
   Game/GameSession.cs all game rules (phases, validation, scoring, per-player views)
   Game/GameManager.cs in-memory game store + idle cleanup
+  Game/MapPresets.cs  preset map areas (also served at /api/maps)
   Hubs/GameHub.cs     thin SignalR layer; pushes a "state" view to each player
 ```
 

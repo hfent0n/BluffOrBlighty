@@ -1,9 +1,11 @@
-import { Map as MlMap, Marker, NavigationControl } from 'maplibre-gl'
+import { LngLatBounds, Map as MlMap, Marker, NavigationControl } from 'maplibre-gl'
 import { useEffect, useRef } from 'react'
-import type { PlacePick } from '../types'
-import { MAP_STYLE_URL, UK_CENTER, UK_ZOOM, placeAt, placeLayers } from './places'
+import type { MapPreset, PlacePick } from '../types'
+import { MAP_STYLE_URL, circleRing, placeAt, placeLayers } from './places'
 
 interface Props {
+  /** The game's map: where to start, and the area picks must stay inside. */
+  area: MapPreset
   picks: PlacePick[]
   /** Index of the pick that will be renamed, or null. */
   renameIndex: number | null
@@ -11,7 +13,7 @@ interface Props {
 }
 
 /** The submit-phase map: scroll around, click a settlement's label to pick it. */
-export function PickerMap({ picks, renameIndex, onPick }: Props) {
+export function PickerMap({ area, picks, renameIndex, onPick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MlMap | null>(null)
   const onPickRef = useRef(onPick)
@@ -23,10 +25,51 @@ export function PickerMap({ picks, renameIndex, onPick }: Props) {
     const map = new MlMap({
       container: containerRef.current!,
       style: MAP_STYLE_URL,
-      center: UK_CENTER,
-      zoom: UK_ZOOM,
+      center: [area.lng, area.lat],
+      zoom: area.zoom,
       attributionControl: { compact: true },
     })
+
+    if (area.radiusKm !== null) {
+      const ring = circleRing(area.lat, area.lng, area.radiusKm)
+      // Start with the whole area in view so the boundary is obvious.
+      map.fitBounds(ring.reduce((b, p) => b.extend(p), new LngLatBounds()), { padding: 24, duration: 0 })
+      // Let players look a little beyond the edge, but not wander off across the country.
+      const outer = circleRing(area.lat, area.lng, area.radiusKm * 2.2, 16)
+      map.setMaxBounds(outer.reduce((b, p) => b.extend(p), new LngLatBounds()))
+      map.setMinZoom(Math.max(map.getZoom() - 1, 6))
+
+      map.on('load', () => {
+        // Dim everything outside the area: a world-sized polygon with the circle cut out.
+        map.addSource('play-area', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'Polygon',
+              coordinates: [
+                [
+                  [-180, -85],
+                  [180, -85],
+                  [180, 85],
+                  [-180, 85],
+                  [-180, -85],
+                ],
+                ring.slice().reverse(),
+              ],
+            },
+          },
+        })
+        map.addLayer({ id: 'play-area-mask', type: 'fill', source: 'play-area', paint: { 'fill-color': '#1f2a24', 'fill-opacity': 0.28 } })
+        map.addLayer({
+          id: 'play-area-edge',
+          type: 'line',
+          source: 'play-area',
+          paint: { 'line-color': '#2f6b4f', 'line-width': 2, 'line-dasharray': [2, 2] },
+        })
+      })
+    }
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
     mapRef.current = map
     // Handy for debugging and browser-driven tests.
@@ -47,6 +90,8 @@ export function PickerMap({ picks, renameIndex, onPick }: Props) {
       map.remove()
       mapRef.current = null
     }
+    // The area is fixed for the whole submit phase.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Numbered markers for the current picks.

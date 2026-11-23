@@ -144,3 +144,20 @@ export function overlayLayerFrom(
   delete layout['symbol-sort-key']
   return { id, type: 'symbol', source: sourceId, filter: ['==', ['get', 'layer'], base.id], layout, paint: { ...base.paint } }
 }
+
+/** A circle as a GeoJSON ring (lng, lat), for drawing a map's allowed area. */
+export function circleRing(lat: number, lng: number, radiusKm: number, steps = 96): [number, number][] {
+  const dLat = radiusKm / 110.574
+  const dLng = radiusKm / (111.32 * Math.cos((lat * Math.PI) / 180))
+  const ring: [number, number][] = []
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * 2 * Math.PI
+    ring.push([lng + dLng * Math.cos(a), lat + dLat * Math.sin(a)])
+  }
+  return ring
+}
+
+/** Same rule as the server (MapPresets.Contains), including the 1 km edge allowance. */
+export function insideMap(map: { lat: number; lng: number; radiusKm: number | null }, p: { lat: number; lng: number }) {
+  return map.radiusKm === null || distanceKm(map, p) <= map.radiusKm + 1
+}

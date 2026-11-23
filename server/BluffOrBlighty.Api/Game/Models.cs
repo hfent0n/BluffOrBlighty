@@ -73,5 +73,6 @@ public sealed record GameView(
     string MeId,
     string HostId,
     double MaxSpreadKm,
+    MapPreset Map,
     PlayerView[] Players,
     RoundView? Round);

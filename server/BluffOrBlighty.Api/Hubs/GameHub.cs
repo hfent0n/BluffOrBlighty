@@ -40,6 +40,8 @@ public sealed class GameHub(GameManager games) : Hub
         return result;
     }
 
+    public Task SetMap(string mapId) => Act((g, me) => g.SetMap(me, mapId));
+
     public Task StartGame() => Act((g, me) => g.Start(me));
 
     public Task Submit(SubmissionRequest submission) => Act((g, me) => g.Submit(me, submission));

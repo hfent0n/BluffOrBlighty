@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { PickerMap } from '../map/PickerMap'
-import { maxSpreadKm } from '../map/places'
+import { insideMap, maxSpreadKm } from '../map/places'
 import type { GameView, PlacePick } from '../types'
 import type { GameApi } from '../useGame'
 import { PlayerList } from './PlayerList'
@@ -12,6 +12,7 @@ export function SubmitScreen({ game, api }: { game: GameView; api: GameApi }) {
   const [renameIndex, setRenameIndex] = useState<number | null>(null)
   const [fakeName, setFakeName] = useState('')
   const [editing, setEditing] = useState(true)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const me = game.players.find((p) => p.id === game.meId)
   const spread = maxSpreadKm(picks)
@@ -35,6 +36,11 @@ export function SubmitScreen({ game, api }: { game: GameView; api: GameApi }) {
 
   const addPick = (pick: PlacePick) => {
     if (!editing) return
+    if (!insideMap(game.map, pick)) {
+      setNotice(`${pick.name} is outside the play area for ${game.map.name}.`)
+      return
+    }
+    setNotice(null)
     setPicks((prev) => {
       if (prev.some((p) => p.lat === pick.lat && p.lng === pick.lng)) return prev
       return prev.length >= PICKS_NEEDED ? prev : [...prev, pick]
@@ -57,7 +63,7 @@ export function SubmitScreen({ game, api }: { game: GameView; api: GameApi }) {
 
   return (
     <div className="split">
-      <PickerMap picks={picks} renameIndex={renameIndex} onPick={addPick} />
+      <PickerMap area={game.map} picks={picks} renameIndex={renameIndex} onPick={addPick} />
       <aside className="panel">
         {submitted ? (
           <>
@@ -69,6 +75,10 @@ export function SubmitScreen({ game, api }: { game: GameView; api: GameApi }) {
         ) : (
           <>
             <h2>Pick your places</h2>
+            <span className="muted small">
+              Map: <strong>{game.map.name}</strong>
+              {game.map.radiusKm !== null && ' (stay inside the dashed circle)'}
+            </span>
             <p className="muted">
               Zoom in and click <strong>3 real place names</strong> close together. Then choose one to{' '}
               <strong>rename</strong> with your fake. In the guessing round, your fake will appear in its place.
@@ -113,6 +123,7 @@ export function SubmitScreen({ game, api }: { game: GameView; api: GameApi }) {
               />
             </label>
 
+            {notice && <p className="hint">{notice}</p>}
             {problem && <p className="hint">{problem}</p>}
             <button className="primary" disabled={!!problem} onClick={submit}>
               Submit

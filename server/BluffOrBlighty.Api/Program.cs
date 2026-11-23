@@ -14,6 +14,7 @@ builder.Services
 var app = builder.Build();
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/api/maps", () => MapPresets.All);
 app.MapHub<GameHub>("/hub/game");
 
 // In production the built React app is copied into wwwroot and served from here.
