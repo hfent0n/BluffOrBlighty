@@ -1,0 +1,137 @@
+name: CI/CD
+
+# Every PR and push to main runs the tests and builds the Docker image.
+# Pushes to main then deploy to Cloud Run (see docs/DEPLOYMENT.md for one-time setup).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  SERVICE: bluff-or-blighty
+  REPOSITORY: bluff-or-blighty
+
+jobs:
+  server:
+    name: Server (build + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore
+      - run: dotnet build --no-restore -c Release
+      - run: dotnet test --no-build -c Release --logger "console;verbosity=normal"
+
+  client:
+    name: Client (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  image:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Cloud Run
+    needs: [server, client, image]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write # for Workload Identity Federation (no JSON keys)
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check deploy settings
+        run: |
+          missing=0
+          for v in GCP_PROJECT_ID GCP_REGION GCP_WIF_PROVIDER GCP_DEPLOY_SA; do
+            if [ -z "${!v}" ]; then echo "::error::Repository variable $v is not set (see docs/DEPLOYMENT.md)"; missing=1; fi
+          done
+          exit $missing
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          GCP_DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push image
+        id: image
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${SERVICE}:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build \
+            --build-arg VITE_MAP_STYLE_URL="${{ vars.VITE_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty' }}" \
+            -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # Games live in memory, so the service runs as a single instance with session
+      # affinity, and a long request timeout keeps SignalR WebSockets open.
+      # A deploy restarts the instance, which ends any games in progress.
+      - name: Deploy
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ steps.image.outputs.image }}
+          flags: >-
+            --allow-unauthenticated
+            --service-account=bluff-or-blighty-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+            --port=8080
+            --min-instances=0
+            --max-instances=1
+            --session-affinity
+            --timeout=3600
+            --cpu=1
+            --memory=512Mi
+
+      - name: Smoke test
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 "${{ steps.deploy.outputs.url }}/api/health"

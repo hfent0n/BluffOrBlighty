@@ -77,4 +77,9 @@ server/BluffOrBlighty.Api/
   Hubs/GameHub.cs     thin SignalR layer; pushes a "state" view to each player
 ```
 
+## Deployment
+
+GitHub Actions tests every PR and deploys `main` to Google Cloud Run as a single container.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the one-time setup (`scripts/gcp-setup.sh`).
+
 Ideas for later are in [docs/IDEAS.md](docs/IDEAS.md).
