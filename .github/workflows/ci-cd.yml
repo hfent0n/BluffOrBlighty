@@ -24,6 +24,18 @@ jobs:
   server:
     name: Server (build + test)
     runs-on: ubuntu-latest
+    # A real Redis for the integration tests (RedisIntegrationTests): two server instances
+    # share it, and players connect over WebSockets, as in production.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -32,6 +44,9 @@ jobs:
       - run: dotnet restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --logger "console;verbosity=normal"
+        env:
+          REDIS_TEST_CONNECTION: localhost:6379
+          REDIS_TEST_REQUIRED: "true" # fail, rather than skip, if Redis isn't there
 
   client:
     name: Client (lint + build)
@@ -71,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.url }}
+      url: ${{ steps.promote.outputs.url }}
     permissions:
       contents: read
       id-token: write # for Workload Identity Federation (no JSON keys)
@@ -80,6 +95,15 @@ jobs:
       REGION: ${{ vars.GCP_REGION }}
     steps:
       - uses: actions/checkout@v4
+
+      # For the smoke test (it uses the SignalR client from client/node_modules).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+        working-directory: client
 
       - name: Check deploy settings
         run: |
@@ -134,16 +158,23 @@ jobs:
           echo "store=$([ -n "$REDIS_SECRET" ] && echo redis || echo memory)" >> "$GITHUB_OUTPUT"
           echo "accounts=$([ -n "$DB_SECRET" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
-      # Without Redis, games are in memory and a deploy ends them; with it, players reconnect to
-      # the new revision and rejoin. A long request timeout keeps SignalR WebSockets open. (With
-      # Redis, --max-instances can be raised; the Redis backplane links the instances.)
-      - name: Deploy
+      # The new revision is deployed with NO traffic, tagged "candidate", and smoke-tested on its
+      # own URL with the real production settings. Players only move to it if that passes, so a
+      # broken build or setting (e.g. a bad Redis secret) never reaches them.
+      #
+      # With the REDIS_SECRET variable set, games live in Redis and survive deploys: players
+      # reconnect to the new revision and rejoin. Without it, games are in memory and a deploy
+      # ends them. A long request timeout keeps SignalR WebSockets open. (With Redis,
+      # --max-instances can be raised; the Redis backplane links the instances.)
+      - name: Deploy (no traffic yet)
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ steps.image.outputs.image }}
+          no_traffic: true
+          tag: candidate
           flags: >-
             --allow-unauthenticated
             --service-account=bluff-or-blighty-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
@@ -156,13 +187,23 @@ jobs:
             --memory=512Mi
             ${{ steps.optional.outputs.flags }}
 
-      - name: Smoke test
+      - name: Smoke test the candidate
         env:
+          # Also catches a missing/ignored secret: the app would quietly fall back to in-memory
+          # games, or run without accounts.
           EXPECT_STORE: ${{ steps.optional.outputs.store }}
           EXPECT_ACCOUNTS: ${{ steps.optional.outputs.accounts }}
         run: |
-          health=$(curl --fail --silent --show-error --retry 5 --retry-delay 3 "${{ steps.deploy.outputs.url }}/api/health")
-          echo "$health"
-          # Catch a misconfigured secret: the app would quietly fall back to in-memory games or no accounts.
-          echo "$health" | grep -q "\"store\":\"$EXPECT_STORE\"" || { echo "::error::Expected store '$EXPECT_STORE'"; exit 1; }
-          echo "$health" | grep -q "\"accounts\":$EXPECT_ACCOUNTS" || { echo "::error::Expected accounts=$EXPECT_ACCOUNTS"; exit 1; }
+          url=$(gcloud run services describe "$SERVICE" --region "$REGION" --format=json \
+            | jq -r '.status.traffic[] | select(.tag == "candidate") | .url')
+          [ -n "$url" ] || { echo "::error::No URL for the candidate revision"; exit 1; }
+          echo "Candidate: $url"
+          node scripts/smoke-test.mjs "$url" "$EXPECT_STORE" "$EXPECT_ACCOUNTS"
+
+      - name: Send traffic to the new revision
+        id: promote
+        run: |
+          gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-latest --quiet
+          url=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "$url/api/health"

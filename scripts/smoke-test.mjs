@@ -1,6 +1,6 @@
 // Smoke test for a deployed revision: run before it gets any traffic.
 //
-//   node scripts/smoke-test.mjs <base-url> [expected-store]
+//   node scripts/smoke-test.mjs <base-url> [expected-store] [expected-accounts]
 //
 // Checks the health endpoint (which also checks Redis is reachable), that the page is served,
 // and plays the start of a real game over WebSockets: one player creates a game and a second
@@ -8,9 +8,9 @@
 // Uses the SignalR client from client/node_modules (run `npm ci` in client first).
 import { createRequire } from 'node:module'
 
-const [base, expectedStore] = process.argv.slice(2)
+const [base, expectedStore, expectedAccounts] = process.argv.slice(2)
 if (!base) {
-  console.error('usage: node scripts/smoke-test.mjs <base-url> [expected-store]')
+  console.error('usage: node scripts/smoke-test.mjs <base-url> [expected-store] [expected-accounts]')
   process.exit(2)
 }
 const require = createRequire(new URL('../client/package.json', import.meta.url))
@@ -27,9 +27,11 @@ setTimeout(() => fail('timed out after 90 s'), 90_000).unref()
 const health = await fetch(`${base}/api/health`).catch((e) => fail(`health request: ${e.message}`))
 const healthBody = await health.text()
 if (!health.ok) fail(`/api/health returned ${health.status}: ${healthBody}`)
-const { store } = JSON.parse(healthBody)
+const { store, accounts } = JSON.parse(healthBody)
 if (expectedStore && store !== expectedStore) fail(`expected store "${expectedStore}", got "${store}"`)
-step(`health ok (store: ${store})`)
+if (expectedAccounts && String(accounts) !== expectedAccounts)
+  fail(`expected accounts ${expectedAccounts}, got ${accounts}`)
+step(`health ok (store: ${store}, accounts: ${accounts})`)
 
 // 2. The client app is served.
 const page = await fetch(base)
