@@ -20,8 +20,8 @@ var signalR = builder.Services
 var redisConnection = builder.Configuration["Redis:ConnectionString"];
 if (!string.IsNullOrWhiteSpace(redisConnection))
 {
-    var options = ConfigurationOptions.Parse(redisConnection);
-    options.AbortOnConnectFail = false; // keep retrying in the background rather than failing startup
+    var options = RedisSettings.Parse(redisConnection);
+    options.AbortOnConnectFail = false; // retry in the background after a later drop, rather than throwing
 
     // Hosted Redis bills per command, so keep the client's background chatter down:
     // ping idle connections every 2 minutes (default 1), re-check server config every
@@ -34,6 +34,18 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
     options.CommandMap = CommandMap.Create(["CONFIG", "CLUSTER"], available: false);
 
     var redis = await ConnectionMultiplexer.ConnectAsync(options);
+
+    // Refuse to start without Redis. Every player connection needs it (the SignalR backplane
+    // subscribes per connection), so starting anyway would break every game. Failing here makes
+    // Cloud Run reject the new revision and keep the previous one serving.
+    var deadline = DateTime.UtcNow.AddSeconds(15);
+    while (!redis.IsConnected && DateTime.UtcNow < deadline) await Task.Delay(250);
+    if (!redis.IsConnected)
+        throw new InvalidOperationException(
+            $"Can't connect to Redis at {RedisSettings.Describe(options)}. Check the Redis:ConnectionString " +
+            "setting (in production, the Secret Manager secret named by the REDIS_SECRET variable).");
+    Console.WriteLine($"Connected to Redis at {RedisSettings.Describe(options)}");
+
     builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
     builder.Services.AddSingleton<IGameStore, RedisGameStore>();
 
@@ -66,7 +78,15 @@ builder.Services
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All });
 var app = builder.Build();
 
-app.MapGet("/api/health", (GameManager games) => Results.Ok(new { status = "ok", store = games.StoreKind }));
+// Health reports the store in use and, for Redis, whether it's actually reachable right now
+// (503 if not), so the post-deploy smoke test catches a broken connection, not just a setting.
+app.MapGet("/api/health", (GameManager games, IServiceProvider services) =>
+{
+    var redis = services.GetService<IConnectionMultiplexer>();
+    var healthy = redis is null || redis.IsConnected;
+    var body = new { status = healthy ? "ok" : "redis unreachable", store = games.StoreKind };
+    return healthy ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
+});
 app.MapGet("/api/maps", () => MapPresets.All);
 app.MapGet("/api/campaign", () => CampaignLevels.Views());
 app.MapHub<GameHub>("/hub/game");

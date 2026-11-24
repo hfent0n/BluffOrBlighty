@@ -70,12 +70,14 @@ progress. With Redis configured:
 
 1. **Get a Redis.** It needs Lua scripting (`EVAL`) and pub/sub, which most hosted Redis services
    support. [Upstash](https://upstash.com) has a free tier and a London (eu-west-2) region; Google's
-   Memorystore works too but has a monthly minimum. Copy the connection string in StackExchange.Redis
-   format, for example:
+   Memorystore works too but has a monthly minimum. Copy the connection string, in either form:
 
    ```text
-   your-db.upstash.io:6379,password=YOUR_PASSWORD,ssl=True,abortConnect=False
+   rediss://default:YOUR_PASSWORD@your-db.upstash.io:6379
+   your-db.upstash.io:6379,password=YOUR_PASSWORD,ssl=True
    ```
+
+   (`rediss://` with two s's means TLS, which Upstash requires.)
 
 2. **Store it in Secret Manager** (prompts for the string without echoing it, and gives the app's
    service account read access):
@@ -84,11 +86,19 @@ progress. With Redis configured:
    ./scripts/redis-secret.sh YOUR_PROJECT_ID
    ```
 
+   At the hidden prompt, paste the connection string itself. The script rejects anything that
+   doesn't look like one, and prints the host it stored (never the password).
+
 3. **Set the GitHub repository variable** `REDIS_SECRET` to the secret name (`redis-connection` by
    default) and push. The deploy adds `--set-secrets=Redis__ConnectionString=…`, and the smoke test
    fails unless `/api/health` reports `"store":"redis"`.
 
 The stored state includes each player's rejoin token, so keep the Redis private (password + TLS).
+
+**If Redis is misconfigured or unreachable** the app refuses to start (after 15 seconds of trying),
+so Cloud Run rejects the new revision and keeps the previous one serving. The deploy job fails
+with "Can't connect to Redis at …" in the Cloud Run logs. `/api/health` also returns 503 if Redis
+drops while running.
 
 ### Trying it locally
 
