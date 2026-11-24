@@ -79,7 +79,10 @@ var accountsEnabled = !string.IsNullOrWhiteSpace(databaseConnection);
 builder.Services.Configure<AccountOptions>(builder.Configuration.GetSection("Auth"));
 if (accountsEnabled)
 {
-    builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(databaseConnection));
+    // Accepts Npgsql's key=value form or a postgresql:// URL (what Neon shows).
+    var npgsql = DatabaseSettings.ToNpgsql(databaseConnection!);
+    Console.WriteLine($"Accounts on: database {DatabaseSettings.Describe(npgsql)}");
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(npgsql));
     builder.Services.AddScoped<AccountService>();
     builder.Services.AddSingleton<IGoogleTokenValidator, GoogleTokenValidator>();
     builder.Services.AddSingleton<IResultRecorder, DbResultRecorder>();
