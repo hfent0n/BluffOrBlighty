@@ -1,8 +1,14 @@
 using System.Text.Json.Serialization;
 using System.Net;
+using BluffOrBlighty.Api.Accounts;
 using BluffOrBlighty.Api.Bots;
+using BluffOrBlighty.Api.Data;
 using BluffOrBlighty.Api.Game;
 using BluffOrBlighty.Api.Hubs;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -66,6 +72,51 @@ else
 
 builder.Services.AddHostedService<GameCleanupService>();
 
+// Accounts: Google sign-in and a Postgres database, when one is configured. Without it the game
+// runs as before (anonymous, campaign progress in the browser) and the client hides sign-in.
+var databaseConnection = builder.Configuration.GetConnectionString("Database");
+var accountsEnabled = !string.IsNullOrWhiteSpace(databaseConnection);
+builder.Services.Configure<AccountOptions>(builder.Configuration.GetSection("Auth"));
+if (accountsEnabled)
+{
+    builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(databaseConnection));
+    builder.Services.AddScoped<AccountService>();
+    builder.Services.AddSingleton<IGoogleTokenValidator, GoogleTokenValidator>();
+    builder.Services.AddSingleton<IResultRecorder, DbResultRecorder>();
+
+    // Cookie encryption keys live in the database, so sign-ins survive deploys.
+    builder.Services.AddDataProtection().SetApplicationName("bluff-or-blighty").PersistKeysToDbContext<AppDbContext>();
+
+    builder.Services
+        .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(o =>
+        {
+            o.Cookie.Name = "bob_session";
+            o.Cookie.HttpOnly = true;
+            o.Cookie.SameSite = SameSiteMode.Strict;
+            o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest; // Secure on HTTPS (see forwarded headers)
+            o.ExpireTimeSpan = TimeSpan.FromDays(90);
+            o.SlidingExpiration = true;
+            // An API, not pages: answer 401/403 instead of redirecting to a login page.
+            o.Events.OnRedirectToLogin = c => { c.Response.StatusCode = 401; return Task.CompletedTask; };
+            o.Events.OnRedirectToAccessDenied = c => { c.Response.StatusCode = 403; return Task.CompletedTask; };
+        });
+    builder.Services.AddAuthorization();
+}
+else
+{
+    builder.Services.AddSingleton<IResultRecorder, NoResultRecorder>();
+}
+
+// Cloud Run terminates HTTPS and forwards plain HTTP; trust its X-Forwarded-Proto so the app
+// knows requests were HTTPS (and marks cookies Secure).
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+});
+
 // Bots read place labels from the same vector tiles the players' map uses.
 builder.Services.AddMemoryCache();
 builder.Services.Configure<BotOptions>(builder.Configuration.GetSection("Bots"));
@@ -80,13 +131,32 @@ builder.Services
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All });
 var app = builder.Build();
 
+app.UseForwardedHeaders();
+
+if (accountsEnabled)
+{
+    // Bring the database schema up to date. (EF Core takes a lock, so overlapping instances
+    // during a deploy don't both migrate.) If the database can't be reached this throws, and the
+    // app doesn't start, so Cloud Run keeps the previous revision serving (as with Redis).
+    await using (var scope = app.Services.CreateAsyncScope())
+        await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapAccountEndpoints();
+}
+else
+{
+    app.MapAccountsDisabled();
+}
+
 // Health reports the store in use and, for Redis, whether it's actually reachable right now
 // (503 if not), so the post-deploy smoke test catches a broken connection, not just a setting.
 app.MapGet("/api/health", (GameManager games, IServiceProvider services) =>
 {
     var redis = services.GetService<IConnectionMultiplexer>();
     var healthy = redis is null || redis.IsConnected;
-    var body = new { status = healthy ? "ok" : "redis unreachable", store = games.StoreKind };
+    var body = new { status = healthy ? "ok" : "redis unreachable", store = games.StoreKind, accounts = accountsEnabled };
     return healthy ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 app.MapGet("/api/maps", () => MapPresets.All);

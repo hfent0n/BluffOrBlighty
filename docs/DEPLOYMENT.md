@@ -139,9 +139,26 @@ Redis__ConnectionString=localhost:6379 dotnet run --project server/BluffOrBlight
 
 `/api/health` shows which store is in use. Without the variable, games are kept in memory.
 
-## Later: Postgres
+## Accounts and saved progress (Postgres + Google sign-in)
 
-When the database is needed, use Cloud SQL for PostgreSQL and connect with the Cloud SQL connector.
-Add `--add-cloudsql-instances=PROJECT:REGION:INSTANCE` to the deploy flags and give the runtime
-service account `roles/cloudsql.client`. Keep the connection password in Secret Manager
-(`--set-secrets`).
+Without a database the game runs anonymously and campaign progress stays in the browser. With one:
+players can sign in with Google, campaign progress and finished games are saved to their account,
+and browser progress is merged in on first sign-in. Only Google's account id and a display name are
+stored (no email). Sign-in cookie keys live in the database, so deploys don't sign people out.
+
+1. **Create a Postgres database.** [Neon](https://neon.tech) has a free tier; pick the region nearest
+   London. Copy the *pooled* connection string in Npgsql format, e.g.
+   `Host=ep-xxx-pooler.….neon.tech;Database=neondb;Username=…;Password=…;SSL Mode=Require`.
+2. **Store it:** `./scripts/db-secret.sh YOUR_PROJECT_ID`, then set the repository variable
+   `DB_SECRET` to `db-connection`. Migrations run automatically at start-up.
+3. **Create a Google OAuth client** (Google Cloud console → APIs & Services): set up the OAuth
+   consent screen (External), then Credentials → Create OAuth client ID → *Web application*.
+   Add your site's address (the Cloud Run URL) and `http://localhost:5173` as Authorised JavaScript
+   origins; no redirect URIs are needed. Set the repository variable `GOOGLE_CLIENT_ID` to the client
+   ID (it's public, not a secret).
+4. Push. The smoke test checks `/api/health` reports `"accounts":true`.
+
+**Locally:** `docker compose up -d db`, then run the API with
+`ConnectionStrings__Database="Host=localhost;Database=bluff;Username=bluff;Password=bluff_dev_password"`.
+Add `Auth__GoogleClientId=…` for real sign-in, or (Development only) `Auth__AllowDevSignIn=true` and
+`POST /api/auth/dev {"name":"Alice"}` to sign in without Google.

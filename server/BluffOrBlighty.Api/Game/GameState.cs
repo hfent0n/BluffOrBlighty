@@ -34,6 +34,9 @@ public sealed class GameState
     public int Leg { get; set; } = 1;
     public int Legs { get; set; } = 1;
 
+    /// <summary>Set once a finished game's results have been saved to players' accounts.</summary>
+    public bool ResultsRecorded { get; set; }
+
     // Per-player tallies across all legs, for campaign stars.
     public Dictionary<string, int> Spotted { get; set; } = [];
     public Dictionary<string, int> Fooled { get; set; } = [];
