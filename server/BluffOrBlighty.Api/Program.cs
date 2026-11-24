@@ -42,8 +42,10 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
     while (!redis.IsConnected && DateTime.UtcNow < deadline) await Task.Delay(250);
     if (!redis.IsConnected)
         throw new InvalidOperationException(
-            $"Can't connect to Redis at {RedisSettings.Describe(options)}. Check the Redis:ConnectionString " +
-            "setting (in production, the Secret Manager secret named by the REDIS_SECRET variable).");
+            $"Can't connect to Redis at {RedisSettings.Describe(options)}. Usual causes: a wrong password " +
+            "(some hosts just drop the connection), TLS off for a host that needs it, or the host being " +
+            "unreachable. Check the Redis:ConnectionString setting (in production, the Secret Manager " +
+            "secret named by the REDIS_SECRET variable).");
     Console.WriteLine($"Connected to Redis at {RedisSettings.Describe(options)}");
 
     builder.Services.AddSingleton<IConnectionMultiplexer>(redis);

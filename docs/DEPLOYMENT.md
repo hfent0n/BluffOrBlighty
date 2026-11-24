@@ -4,9 +4,36 @@ Everything is in [`.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml)
 
 | Trigger | What runs |
 |---|---|
-| Pull request | Server build and tests, client lint and build, Docker image build (not pushed) |
+| Pull request | Server build and tests (including Redis integration tests), client lint and build, Docker image build (not pushed) |
 | Push to `main` | All of the above, then **deploy to Cloud Run** if everything passed |
 | Manual (`workflow_dispatch`) | Same as a push to the branch you pick. Deploys only from `main` |
+
+### What stops a broken commit reaching players
+
+1. **Tests with a real Redis.** The server job starts a Redis container. `RedisIntegrationTests`
+   run two server instances against it, with players connecting over WebSockets as in production:
+   a join on one instance must reach a player on the other (the backplane), and a game must
+   survive its server shutting down. In CI a missing Redis fails these tests; locally they skip
+   unless `REDIS_TEST_CONNECTION` is set:
+
+   ```bash
+   docker compose up -d redis
+   ```
+
+   ```bash
+   REDIS_TEST_CONNECTION=localhost:6379 dotnet test
+   ```
+
+2. **The new revision is tested before it gets traffic.** It's deployed with no traffic under a
+   `candidate` tag, with the real production settings and secrets. If it can't start (for example
+   it can't reach Redis), the deploy fails right there. Otherwise
+   [`scripts/smoke-test.mjs`](../scripts/smoke-test.mjs) runs against the candidate's own URL:
+   - health, including Redis being reachable;
+   - the page being served;
+   - two players creating and joining a game over WebSockets.
+
+   Traffic moves to the new revision only if all of that passes; otherwise players stay on the
+   previous one. To try the smoke test yourself: `node scripts/smoke-test.mjs <url> [redis|memory]`.
 
 The app ships as one container: the [`Dockerfile`](../Dockerfile) builds the React client and
 copies it into the .NET API's `wwwroot`. The API then serves the page, `/api/*` and the SignalR hub

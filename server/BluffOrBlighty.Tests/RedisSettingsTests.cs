@@ -27,6 +27,16 @@ public class RedisSettingsTests
         Assert.Equal("eu1-cool-db.upstash.io", o.SslHost);
     }
 
+    [Theory]
+    [InlineData("redis://default:pw@legible-buck-1.upstash.io:6379")] // the slip that broke a deploy
+    [InlineData("legible-buck-1.upstash.io:6379,password=pw")]
+    public void Upstash_always_uses_tls(string value)
+    {
+        var o = RedisSettings.Parse(value);
+        Assert.True(o.Ssl);
+        Assert.Equal("legible-buck-1.upstash.io", o.SslHost);
+    }
+
     [Fact]
     public void Plain_redis_urls_are_not_tls_and_default_the_port()
     {

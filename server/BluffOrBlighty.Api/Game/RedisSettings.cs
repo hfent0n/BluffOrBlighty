@@ -35,8 +35,18 @@ public static class RedisSettings
                     "'host:6379,password=…,ssl=True' or 'rediss://default:PASSWORD@host:6379'.");
         }
 
+        // Upstash only accepts TLS, and its console shows both redis:// and rediss:// forms, so a
+        // missing "s" is an easy slip. There's no plain-text option to preserve: always use TLS.
+        if (options.EndPoints.OfType<DnsEndPoint>().FirstOrDefault(e => IsUpstash(e.Host)) is { } upstash)
+        {
+            options.Ssl = true;
+            options.SslHost ??= upstash.Host;
+        }
+
         return options;
     }
+
+    private static bool IsUpstash(string host) => host.EndsWith(".upstash.io", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Where it connects, for logs and errors. Never includes the password.</summary>
     public static string Describe(ConfigurationOptions options) =>

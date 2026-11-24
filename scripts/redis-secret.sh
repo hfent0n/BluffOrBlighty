@@ -24,7 +24,10 @@ CONN="$(printf '%s' "$CONN" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
 # Catch the easy mistakes before storing anything (the app also refuses to start with a bad one).
 # The value itself is never printed.
-if [[ "$CONN" =~ ^rediss?://([^@/]*@)?([A-Za-z0-9.-]+)(:([0-9]+))?/?$ ]]; then
+if [[ "$CONN" =~ ^redis://([^@/]*@)?[A-Za-z0-9.-]*\.upstash\.io ]]; then
+  echo "error: Upstash needs TLS: use the rediss:// form (two s's), e.g. rediss://default:PASSWORD@host:6379" >&2
+  exit 1
+elif [[ "$CONN" =~ ^rediss?://([^@/]*@)?([A-Za-z0-9.-]+)(:([0-9]+))?/?$ ]]; then
   HOST="${BASH_REMATCH[2]}:${BASH_REMATCH[4]:-6379}"
   [[ "$CONN" == rediss://* ]] && HOST="$HOST (TLS)" || HOST="$HOST (no TLS)"
 elif [[ "$CONN" =~ ^([A-Za-z0-9.-]+):([0-9]+)(,[^[:space:]]*)?$ ]]; then
