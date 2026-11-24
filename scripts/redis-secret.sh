@@ -24,7 +24,11 @@ CONN="$(printf '%s' "$CONN" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
 # Catch the easy mistakes before storing anything (the app also refuses to start with a bad one).
 # The value itself is never printed.
-if [[ "$CONN" =~ ^redis://([^@/]*@)?[A-Za-z0-9.-]*\.upstash\.io ]]; then
+if [[ "$CONN" =~ (://[^:@/]*:|password=)\*+(@|,|$) ]]; then
+  echo "error: the password is the masked '****' placeholder. In the Upstash console, reveal or copy" >&2
+  echo "the real password (the copy button next to it) and paste the connection string again." >&2
+  exit 1
+elif [[ "$CONN" =~ ^redis://([^@/]*@)?[A-Za-z0-9.-]*\.upstash\.io ]]; then
   echo "error: Upstash needs TLS: use the rediss:// form (two s's), e.g. rediss://default:PASSWORD@host:6379" >&2
   exit 1
 elif [[ "$CONN" =~ ^rediss?://([^@/]*@)?([A-Za-z0-9.-]+)(:([0-9]+))?/?$ ]]; then

@@ -25,6 +25,10 @@ public static class RedisSettings
         if (options.EndPoints.Count == 0)
             throw new ArgumentException("The Redis connection setting has no host in it.");
 
+        if (options.Password is { Length: > 0 } pw && pw.All(c => c == '*'))
+            throw new ArgumentException(
+                "The Redis password is the masked '****' placeholder a console shows, not the real password.");
+
         foreach (var endPoint in options.EndPoints)
         {
             // The bad value isn't echoed: a malformed setting might have a password in it.

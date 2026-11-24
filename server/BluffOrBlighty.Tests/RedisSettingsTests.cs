@@ -57,6 +57,12 @@ public class RedisSettingsTests
         Assert.DoesNotContain("blufforblighty", e.Message);
     }
 
+    [Theory]
+    [InlineData("rediss://default:********@legible-buck-1.upstash.io:6379")] // copied while masked
+    [InlineData("legible-buck-1.upstash.io:6379,password=********,ssl=True")]
+    public void Rejects_a_masked_password(string value) =>
+        Assert.Contains("masked", Assert.ThrowsAny<ArgumentException>(() => RedisSettings.Parse(value)).Message);
+
     [Fact]
     public void Description_never_includes_the_password()
     {
